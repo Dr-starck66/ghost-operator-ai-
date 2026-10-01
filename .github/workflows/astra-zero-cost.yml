@@ -1,0 +1,13 @@
+name: ASTRA ZERO-COST GUARD Ω
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  zero-cost:
+    uses: Dr-starck66/betgpt-railway/.github/workflows/astra-zero-cost-reusable.yml@main
