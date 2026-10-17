@@ -125,7 +125,7 @@ export default function AstraTeam() {
           {m.ai.reason && <p className="text-xs text-red-700">{m.ai.reason}</p>}
           {m.ai.answerSha256 && <p className="font-mono text-xs break-all">Empreinte SHA-256 de la synthèse : {m.ai.answerSha256}</p>}
         </div>}
-        {m.taskId && <p className="text-xs text-blue-700">Tâche en cours : {m.taskId}</p>
+        {m.taskId && <p className="text-xs text-blue-700">Tâche en cours : {m.taskId}</p>}
       </article>)}
     </section>
   </div>;
