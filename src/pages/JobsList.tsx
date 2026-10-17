@@ -15,13 +15,15 @@ interface Task {
 export default function JobsList() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
+  const [accessError, setAccessError] = useState('');
 
   const fetchTasks = async () => {
     try {
-      const res = await axios.get('/api/tasks');
+      const res = await axios.get('/api/tasks', { headers: { 'x-ghost-token': sessionStorage.getItem('ghost_admin_token') || '' } });
+      setAccessError('');
       setTasks(res.data);
     } catch(e) {
-      console.error(e);
+      setAccessError(axios.isAxiosError(e) && e.response?.status === 401 ? 'Accès privé : renseignez votre clé dans Nouvelle mission.' : 'Impossible de lire les missions.');
     } finally {
       setLoading(false);
     }
@@ -59,6 +61,7 @@ export default function JobsList() {
         </Link>
       </div>
 
+      {accessError && <p role="alert" className="mb-4 p-3 text-red-700 bg-red-50 border rounded">{accessError} <Link to="/dashboard/build" className="underline">Ouvrir la connexion</Link></p>}
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden flex flex-col flex-1 shadow-sm">
         {loading && tasks.length === 0 ? (
            <div className="p-8 text-center text-gray-500 text-sm mono">Loading telemetry...</div>
