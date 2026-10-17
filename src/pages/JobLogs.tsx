@@ -11,7 +11,7 @@ export default function JobLogs() {
     let active = true;
     const refresh = async () => {
       try {
-        const { data } = await axios.get('/api/tasks/' + encodeURIComponent(id || ''));
+        const { data } = await axios.get('/api/tasks/' + encodeURIComponent(id || ''), { headers: { 'x-ghost-token': sessionStorage.getItem('ghost_admin_token') || '' } });
         if (active) { setTask(data); setError(''); }
       } catch (e: any) {
         if (active) setError(e.response?.data?.error || String(e.message || e));
@@ -35,8 +35,8 @@ export default function JobLogs() {
   return (
     <main className="p-8 max-w-6xl mx-auto space-y-6 text-gray-900">
       <Link to="/dashboard" className="flex items-center gap-2 text-blue-600"><ChevronLeft className="w-4 h-4"/> All tasks</Link>
-      <h1 className="text-lg font-bold">Ghost Operator — server-side execution</h1>
-      {error && <p role="alert" className="text-red-700">{error}</p>}
+      <h1 className="text-lg font-bold">Ghost Operator — résultats vérifiables côté serveur</h1>
+      {error && <p role="alert" className="text-red-700">{error} <Link to="/dashboard/build" className="underline">Saisir la clé privée</Link></p>}
       {!task && !error && <p>Loading persisted task...</p>}
       {task && (
         <>
