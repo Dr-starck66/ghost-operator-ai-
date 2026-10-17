@@ -197,7 +197,7 @@ export function createAstraTeam({ filePath, taskStore, autoStart = true, tickMs 
         }
         if (task.status === 'failed') {
           const error = String(task.error || 'Task failed').slice(0, 300);
-          const transient = /No verified HTTP evidence|timed?out|ECONN|network|ENOTFOUND|EAI_AGAIN/i.test(error);
+          const transient = /No verified HTTP evidence|No public page could be fetched|timed?out|ECONN|network|ENOTFOUND|EAI_AGAIN/i.test(error);
           if (transient && (m.retryAttempts || 0) < 2) {
             m.failedTaskIds ||= [];
             m.failedTaskIds.push(m.taskId);

@@ -294,8 +294,8 @@ async function boot() {
       try {
         const oneShot = astraTeam.create({
           project: 'ghost_operator', intent: 'research',
-          goal: 'Auditer les titres HTML de Ghost Operator et produire une synthèse distincte par Nemotron, sans inventer de résultat.',
-          url: 'https://ghost-operator-astra-production.up.railway.app/'
+          goal: 'Lire le HTML public IANA sur les noms de domaine réservés, puis produire une synthèse NVIDIA séparée de l’audit.',
+          url: 'https://www.iana.org/domains/reserved'
         });
         console.log('ASTRA_NEMOTRON_TEAM_BOOTSTRAP ' + JSON.stringify({
           id: oneShot.id, status: oneShot.status, deduplicated: Boolean(oneShot.deduplicated)
