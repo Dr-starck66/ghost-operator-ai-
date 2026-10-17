@@ -3,6 +3,7 @@ import { createServer as createViteServer } from 'vite';
 import path from 'node:path';
 import dotenv from 'dotenv';
 import { createTaskStore } from './server/task-store.mjs';
+import { createProspectBridge } from './server/prospect-bridge.mjs';
 import { validateTarget } from './server/executor.mjs';
 import { executeMission, selectWorkflow } from './server/mission-agent.mjs';
 import { recordMission } from './astra/mission-ledger.mjs';
@@ -18,6 +19,7 @@ const store = createTaskStore({
   filePath: path.join(dataDir, 'ghost-tasks.json'),
   execute: executeMission
 });
+const prospectBridge = createProspectBridge({filePath:path.join(dataDir,'astra-prospect-campaigns.json'),taskStore:store});
 
 // Access protection is mandatory if opting into a potentially metered LLM provider.
 if (process.env.GHOST_AI_MODE === 'gemini' && !process.env.GHOST_ADMIN_TOKEN) {
@@ -25,9 +27,29 @@ if (process.env.GHOST_AI_MODE === 'gemini' && !process.env.GHOST_ADMIN_TOKEN) {
 }
 app.use('/api/tasks', (req, res, next) => {
   const token = process.env.GHOST_ADMIN_TOKEN;
-  if (token && req.get('x-ghost-token') !== token) return res.status(401).json({ error: 'Unauthorized' });
+  if (!token || req.get('x-ghost-token') !== token) return res.status(401).json({ error: 'Unauthorized' });
   next();
 });
+
+app.use('/api/prospect', (req, res, next) => {
+  const token = process.env.GHOST_ADMIN_TOKEN;
+  if (!token || req.get('x-ghost-token') !== token) return res.status(401).json({error:'Unauthorized'});
+  res.set('Cache-Control','no-store');
+  next();
+});
+const sales = (fn) => (req, res) => {
+  try { const result=fn(req);res.json(result); }
+  catch(error) {const message=String(error?.message||error);res.status(/not completed|no reviewable|duplicate_email/.test(message)?409:/not found/i.test(message)?404:400).json({error:message.slice(0,200)});}
+};
+app.get('/api/prospect/campaigns',sales(()=>prospectBridge.snapshot()));
+app.post('/api/prospect/campaigns',sales(req=>prospectBridge.create(req.body)));
+app.post('/api/prospect/campaigns/:id/sync',sales(req=>prospectBridge.syncDiscovery(req.params.id)));
+app.post('/api/prospect/campaigns/:id/contacts',sales(req=>prospectBridge.importContacts(req.params.id,req.body)));
+app.post('/api/prospect/campaigns/:id/prepare',sales(req=>prospectBridge.prepare(req.params.id)));
+app.post('/api/prospect/campaigns/:id/approve',sales(req=>prospectBridge.approve(req.params.id,req.body?.confirmation)));
+app.post('/api/prospect/campaigns/:id/suppress',sales(req=>prospectBridge.suppress(req.params.id,req.body?.email)));
+app.post('/api/prospect/campaigns/:id/events',sales(req=>prospectBridge.event(req.params.id,req.body)));
+app.get('/api/prospect/campaigns/:id/drafts',sales(req=>({drafts:prospectBridge.draftPreview(req.params.id)})));
 
 app.post('/api/tasks', (req, res) => {
   try {
@@ -109,6 +131,8 @@ app.get('/api/health', (_req, res) => {
     status: 'ok',
     worker: 'server-side',
     agentWorkflows: ['site_audit', 'lead_research', 'web_research'],
+    b2bCampaigns: 'review_only',
+    b2bOutboundEnabled: false,
     tasks: store.status(),
     persistentVolumeConfigured: Boolean(process.env.GHOST_DATA_DIR),
     aiMode: process.env.GHOST_AI_MODE === 'gemini' ? 'gemini' : 'deterministic'

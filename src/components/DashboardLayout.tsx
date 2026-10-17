@@ -8,6 +8,7 @@ export default function DashboardLayout() {
   const navItems = [
     { name: 'Deployments', path: '/dashboard', icon: LayoutDashboard },
     { name: 'Build Agent', path: '/dashboard/build', icon: PlusCircle },
+    { name: 'Prospection B2B', path: '/dashboard/campaigns', icon: Activity },
     { name: 'Settings', path: '/dashboard/settings', icon: Settings },
   ];
 

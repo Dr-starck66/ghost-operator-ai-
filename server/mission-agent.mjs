@@ -10,7 +10,7 @@ export function selectWorkflow(input) {
 function digest(value) {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');
 }
-function domains(links) {
+function domains(links, maxCandidates = 3) {
   const seen = new Set();
   const excluded = /(?:google|facebook|instagram|twitter|x\.com|linkedin|youtube|tiktok|pinterest|wikipedia|github|cloudflare|wordpress|mozilla|apple|microsoft|amazon)\./i;
   return (links || []).filter(link => {
@@ -20,7 +20,7 @@ function domains(links) {
       seen.add(url.hostname);
       return true;
     } catch { return false; }
-  }).slice(0, 3);
+  }).slice(0, Math.max(1, Math.min(25, maxCandidates)));
 }
 function auditPage(page) {
   const issues = [];
@@ -64,7 +64,7 @@ export async function executeMission(task, log = () => {}, crawl = executeExtrac
       coverage: pages.length, disclaimer: 'HTML-only technical signals; indexing/ranking are not verified' };
     step('audit', pages.length ? 'PASS' : 'FAIL', report.totalIssues + ' technical observations across ' + pages.length + ' pages');
   } else if (workflow === 'lead_research') {
-    const candidates = domains(seed.externalLinks || []);
+    const candidates = domains(seed.externalLinks || [], task.maxCandidates || 3);
     const prospects = [];
     for (const candidate of candidates) {
       try {

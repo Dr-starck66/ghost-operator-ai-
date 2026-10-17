@@ -4,6 +4,7 @@ import DashboardLayout from './components/DashboardLayout';
 import TaskBuilder from './pages/TaskBuilder';
 import JobLogs from './pages/JobLogs';
 import JobsList from './pages/JobsList';
+import Campaigns from './pages/Campaigns';
 
 export default function App() {
   return (
@@ -13,6 +14,7 @@ export default function App() {
         <Route index element={<JobsList />} />
         <Route path="build" element={<TaskBuilder />} />
         <Route path="jobs/:id" element={<JobLogs />} />
+        <Route path="campaigns" element={<Campaigns />} />
       </Route>
     </Routes>
   );
