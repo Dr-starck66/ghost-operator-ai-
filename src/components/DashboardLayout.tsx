@@ -1,5 +1,5 @@
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { Terminal, LayoutDashboard, PlusCircle, Activity, Settings, User } from 'lucide-react';
+import { Terminal, LayoutDashboard, PlusCircle, Activity, Settings, User, Bot } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 export default function DashboardLayout() {
@@ -9,6 +9,7 @@ export default function DashboardLayout() {
     { name: 'Deployments', path: '/dashboard', icon: LayoutDashboard },
     { name: 'Build Agent', path: '/dashboard/build', icon: PlusCircle },
     { name: 'Prospection B2B', path: '/dashboard/campaigns', icon: Activity },
+    { name: 'Nemotron NVIDIA', path: '/dashboard/nemotron', icon: Bot },
     { name: 'Settings', path: '/dashboard/settings', icon: Settings },
   ];
 
