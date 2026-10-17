@@ -24,7 +24,7 @@ function fixture(t) {
         pagesVisited: 2, evidenceSha256: 'a'.repeat(64), completedAt: '2026-10-17T23:00:00Z',
         report: { potentialMatches: 0, unverified: 2, totalIssues: 1 } };
     },
-    fail(id) { const task = tasks.find(t => t.id === id); task.status = 'failed'; task.error = 'HTTP 503'; },
+    fail(id, reason = 'HTTP 503') { const task = tasks.find(t => t.id === id); task.status = 'failed'; task.error = reason; },
     tamper(id) { const task = tasks.find(t => t.id === id); task.result.pagesVisited = 100; }
   };
   const filePath = path.join(dir, 'team.json');
@@ -134,5 +134,23 @@ test('failed mission recovers without replaying old failed task; failure stays i
   assert.equal(done.status, 'completed');
   assert.equal(done.audit.status, 'PASS');
   assert.equal(done.audit.retainedFailedAttempts, 2);
+  team.close();
+});
+
+
+test('empty public-page extraction retains failure and schedules only a bounded retry', t => {
+  const f = fixture(t), team = f.make();
+  const mission = team.create({ ...input, intent: 'research' });
+  team.tick();
+  const firstId = f.store.list()[0].id;
+  f.store.fail(firstId, 'No public page could be fetched: extraction not completed');
+  team.tick();
+  const current = team.get(mission.id);
+  assert.equal(current.status, 'running');
+  assert.equal(current.retryAttempts, 1);
+  assert.ok(current.failedTaskIds.includes(firstId));
+  assert.ok(current.nextAttemptAt > Date.now());
+  assert.equal(f.store.list().length, 1);
+  assert.equal(current.audit, undefined);
   team.close();
 });
