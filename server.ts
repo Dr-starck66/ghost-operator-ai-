@@ -268,6 +268,23 @@ async function boot() {
   app.listen(PORT, '0.0.0.0', () => {
     console.log('Ghost Operator server worker listening on port ' + PORT);
     void verifyNemotronOnBoot();
+    // One-time real read-only multi-agent mission on this existing ASTRA project.
+    // Persistent idempotency key prevents duplicates across restarts and redeploys.
+    if (process.env.ASTRA_TEAM_DISABLE_BOOTSTRAP !== '1') {
+      try {
+        const proof = astraTeam.create({
+          project: 'ghost_operator', intent: 'seo',
+          goal: 'Contrôler le HTML public de Ghost Operator avec recherche, SEO et audit intègre.',
+          url: 'https://ghost-operator-astra-production.up.railway.app/'
+        });
+        console.log('ASTRA_TEAM_BOOTSTRAP ' + JSON.stringify({
+          id: proof.id, status: proof.status, deduplicated: Boolean(proof.deduplicated),
+          project: proof.project, intent: proof.intent
+        }));
+      } catch (cause: any) {
+        console.error('ASTRA_TEAM_BOOTSTRAP_FAIL ' + String(cause?.message || cause));
+      }
+    }
     if (!process.env.GHOST_DATA_DIR) console.warn('GHOST_DATA_DIR not configured: mount a persistent volume for restart-safe hosting');
   });
 }
