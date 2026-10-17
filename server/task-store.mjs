@@ -77,7 +77,7 @@ export function createTaskStore({ filePath, execute, autoStart = true }) {
     const maxCandidates = Number(options?.maxCandidates??3);
     if (!Number.isInteger(maxCandidates) || maxCandidates < 1 || maxCandidates > 25) throw new Error('Candidates range 1-25');
     const id = 'task_' + randomUUID();
-    tasks[id] = { id, url: url.href, goal: rawGoal.trim(), workflow, maxCandidates, status: 'pending', logs: ['Task persisted on server'], createdAt: Date.now() };
+    tasks[id] = { id, url: url.href, goal: rawGoal.trim(), workflow, maxCandidates, noPaidAI: options.noPaidAI === true, status: 'pending', logs: ['Task persisted on server'], createdAt: Date.now() };
     try { save(); } catch (error) { delete tasks[id]; throw error; }
     schedule();
     return get(id);
