@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import axios from 'axios';
 import { ChevronLeft, Code, Download, TerminalSquare, Activity, CheckCircle2, ServerCrash } from 'lucide-react';
-import { GoogleGenAI } from '@google/genai';
 import { cn } from '../lib/utils';
 
 function DataRenderer({ data }: { data: any }) {
@@ -55,7 +54,6 @@ export default function JobLogs() {
   const { id } = useParams();
   const [task, setTask] = useState<any>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [isExecuting, setIsExecuting] = useState(false);
 
   const fetchTask = async () => {
     try {
@@ -66,237 +64,11 @@ export default function JobLogs() {
     }
   };
   
-  const updateTask = async (updates: any) => {
-    try {
-      await axios.put(`/api/tasks/${id}`, updates);
-      fetchTask();
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const executeTask = async (currentTask: any) => {
-    if (isExecuting) return;
-    setIsExecuting(true);
-    
-    await updateTask({ status: 'running', logMessage: `[INIT] Starting execution for URL: ${currentTask.url}` });
-    await updateTask({ logMessage: `[GOAL] ${currentTask.goal}` });
-    
-    try {
-      await updateTask({ logMessage: `[OBSERVE] Crawling site up to 10 pages via proxy worker...` });
-      
-      const visited = new Set<string>();
-      const queue = [currentTask.url];
-      const maxPages = 10;
-      let allText = "";
-      const allLinks = new Set<string>();
-      let baseUrl = "";
-      try {
-        baseUrl = new URL(currentTask.url).origin;
-      } catch(e) { /* ignore */ }
-      
-      while (queue.length > 0 && visited.size < maxPages) {
-        const urlToVisit = queue.shift()!;
-        if (visited.has(urlToVisit)) continue;
-        visited.add(urlToVisit);
-        
-        await updateTask({ logMessage: `[OBSERVE] Crawling page ${visited.size}/${maxPages}: ${urlToVisit}` });
-        
-        try {
-          const scrapeRes = await axios.post('/api/scrape', { url: urlToVisit });
-          allText += `\n\n--- PAGE: ${urlToVisit} ---\n` + scrapeRes.data.textContent.substring(0, 5000);
-          
-          const pageLinks: string[] = scrapeRes.data.links || [];
-          for (const link of pageLinks) {
-             allLinks.add(link);
-             if (baseUrl && link.startsWith(baseUrl) && !visited.has(link) && !queue.includes(link)) {
-                 queue.push(link);
-             }
-          }
-        } catch(e) {
-          await updateTask({ logMessage: `[WARNING] Failed to fetch ${urlToVisit}` });
-        }
-      }
-      
-      await updateTask({ logMessage: `[OBSERVE] Extracted ${allText.length} characters of text and ${allLinks.size} links across ${visited.size} pages.` });
-      
-      await updateTask({ logMessage: `[THINK] Analyzing site structure and extracting requested data...` });
-      
-      const externalLinks = Array.from(allLinks).filter(link => {
-          if (!baseUrl) return true;
-          if (!link.startsWith(baseUrl)) return true;
-          
-          // Also include internal tracking/affiliate redirects
-          try {
-             const path = new URL(link).pathname.toLowerCase();
-             if (path.includes('/go/') || path.includes('/out/') || path.includes('/exit/') || path.includes('/visit/') || path.includes('/track/') || path.includes('/redirect/')) {
-                 return true;
-             }
-          } catch(e) {}
-          
-          return false;
-      });
-      
-      const goalLower = currentTask.goal.toLowerCase();
-      const isExtractingLinksOnly = goalLower.includes('liens externes') || goalLower.includes('external links') || goalLower.includes('externals links');
-      
-      let extractedData: any;
-
-      // Use the free API key provided by AI Studio in the frontend bundle
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-
-      if (isExtractingLinksOnly && externalLinks.length > 5) {
-          await updateTask({ logMessage: `[THINK] Large link extraction detected. Grouping ${externalLinks.length} external links by domain to prevent truncation...` });
-          
-          const linksByDomain: Record<string, string[]> = {};
-          externalLinks.forEach((link: string) => {
-             try {
-                const domain = new URL(link).hostname.replace(/^www\./, '');
-                if (!linksByDomain[domain]) linksByDomain[domain] = [];
-                if (!linksByDomain[domain].includes(link)) {
-                   linksByDomain[domain].push(link);
-                }
-             } catch(e) {}
-          });
-
-          const domains = Object.keys(linksByDomain);
-          await updateTask({ logMessage: `[THINK] Found ${domains.length} unique external domains. Asking AI to classify them...` });
-
-          const domainPrompt = `
-You are Ghost Operator AI. 
-The user's goal is: "${currentTask.goal}"
-
-Classify the following domains into one of these specific categories based on typical internet traffic:
-- "Affiliate / Tracking / Ad Networks"
-- "Social Media"
-- "Reference / External Content"
-- "Sponsor / Partner"
-- "Other"
-
-DOMAINS:
-${domains.join('\n')}
-
-Return ONLY a JSON map where the key is the domain and the value is a JSON object. Provide a 'category', and if it's an affiliate/tracking domain, also provide a 'guess_destination' if you recognize the network.
-Do not include markdown blocks. Example:
-{
-  "facebook.com": {"category": "Social Media"},
-  "singlesgetmatched.com": {"category": "Affiliate / Tracking / Ad Networks"}
-}
-`;
-          
-          try {
-             const result = await ai.models.generateContent({
-               model: "gemini-3.1-pro-preview",
-               contents: domainPrompt,
-               config: { responseMimeType: "application/json" }
-             });
-
-             const classification = JSON.parse(result.text || "{}");
-             
-             // Build final result
-             const finalResults = [];
-             for (const domain of domains) {
-                const links = linksByDomain[domain];
-                const catInfo = classification[domain] || { category: "Other" };
-                
-                finalResults.push({
-                   category: catInfo.category,
-                   domain: domain,
-                   total_links_found: links.length,
-                   affiliate_network_info: catInfo.guess_destination,
-                   all_urls: links
-                });
-             }
-             
-             // Sort by Category to group Affiliates at top usually
-             finalResults.sort((a, b) => a.category.localeCompare(b.category));
-
-             extractedData = { 
-                "total_unique_external_links": externalLinks.length,
-                "categories": finalResults 
-             };
-             
-             await updateTask({ logMessage: `[DECIDE] Successfully classified domains and assembled all ${externalLinks.length} links into structured JSON.` });
-          } catch(e: any) {
-             await updateTask({ logMessage: `[WARNING] Classification parsing failed: ${e.message}. Returning raw links.` });
-             extractedData = { results: externalLinks };
-          }
-      } else {
-        const extractionPrompt = `
-You are Ghost Operator AI, an autonomous data extraction agent.
-Your goal is to fulfill the user's objective based on the provided website content and links.
-
-GOAL: ${currentTask.goal}
-
-Important Instructions:
-- Extract the relevant information requested in the GOAL.
-- If the goal involves extracting links, you MUST process the ENTIRE list of "EXTERNAL LINKS IDENTIFIED" below and include EVERY SINGLE MATCHING LINK in your JSON response. DO NOT summarize, skip, or provide just one example.
-- For each link, provide the original \`url\`. If the link appears to be an affiliate link or tracking link, do your best to also guess or provide the \`destination_url\` to the affiliate program or final destination if possible. Also provide a \`type\` field (e.g., "affiliate", "social", "reference", etc.).
-- Respond with ONLY raw JSON, do not wrap it in a markdown block.
-- Format the output as a JSON object containing a single array: { "results": [ ... ] }.
-
-EXTERNAL LINKS IDENTIFIED:
-${externalLinks.join('\n')}
-
-WEBSITE CONTENT SUMMARY:
-${allText.substring(0, 30000)}
-        `;
-
-        const result = await ai.models.generateContent({
-          model: "gemini-3.1-pro-preview",
-          contents: extractionPrompt,
-          config: {
-            responseMimeType: "application/json"
-          }
-        });
-        
-        await updateTask({ logMessage: `[DECIDE] Data structure parsed successfully.` });
-        
-        const textResponse = result.text || "";
-        try {
-          extractedData = JSON.parse(textResponse.trim());
-        } catch (e) {
-          extractedData = { raw_output: textResponse.trim() };
-          await updateTask({ logMessage: `[WARNING] Failed to parse JSON strictly. Raw output captured.` });
-        }
-      }
-      
-      await updateTask({ logMessage: `[EXECUTE] Executing data extraction mapping...` });
-      
-      await updateTask({ 
-        status: 'completed', 
-        result: extractedData,
-        logMessage: `[SUCCESS] Task completed successfully.`
-      });
-
-    } catch (error: any) {
-      const errorMessage = error.response?.data?.error || error.message || String(error);
-      await updateTask({ 
-        status: 'failed', 
-        logMessage: `[ERROR] Execution failed: ${errorMessage}` 
-      });
-      await updateTask({ logMessage: `[HEALING] Initiating auto-repair logic... but max retries reached.` });
-    }
-  };
-
   useEffect(() => {
     fetchTask();
-    const interval = setInterval(() => {
-       setTask((currentTask: any) => {
-         if (!currentTask || currentTask.status === 'running' || currentTask.status === 'pending') {
-           fetchTask();
-         }
-         return currentTask;
-       });
-    }, 2000);
+    const interval = setInterval(fetchTask, 2000);
     return () => clearInterval(interval);
   }, [id]);
-  
-  useEffect(() => {
-    if (task && task.status === 'pending' && !isExecuting) {
-      executeTask(task);
-    }
-  }, [task, isExecuting]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -324,7 +96,7 @@ ${allText.substring(0, 30000)}
         </div>
         <div className="flex gap-3 items-center">
            {task.status === 'running' && <span className="flex items-center gap-2 text-blue-600 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider font-mono"><Activity className="w-3 h-3 status-pulse"/> Executing</span>}
-           {task.status === 'completed' && <span className="flex items-center gap-2 text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider font-mono"><CheckCircle2 className="w-3 h-3"/> Success</span>}
+           {task.status === 'completed' && <span className="flex items-center gap-2 text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider font-mono"><CheckCircle2 className="w-3 h-3"/> Extracted</span>}
            {task.status === 'failed' && <span className="flex items-center gap-2 text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider font-mono"><ServerCrash className="w-3 h-3"/> Failed</span>}
         </div>
       </div>
@@ -338,7 +110,7 @@ ${allText.substring(0, 30000)}
                <div className="w-2.5 h-2.5 rounded-full bg-yellow-400" />
                <div className="w-2.5 h-2.5 rounded-full bg-green-400" />
              </div>
-             <div className="mx-auto text-[10px] uppercase font-bold tracking-wider text-gray-500 pl-4">Agent Reasoning</div>
+             <div className="mx-auto text-[10px] uppercase font-bold tracking-wider text-gray-500 pl-4">Server execution logs</div>
           </div>
           <div ref={scrollRef} className="flex-1 overflow-auto p-4 font-mono text-[11px] text-gray-700 space-y-4">
             {task.logs.map((log: string, idx: number) => {
@@ -394,7 +166,7 @@ ${allText.substring(0, 30000)}
         {/* Database Output */}
         <div className="w-1/2 glass rounded-xl overflow-hidden flex flex-col pt-0">
            <div className="h-10 border-b border-gray-200 flex items-center justify-between px-4 bg-gray-50">
-             <div className="font-bold text-[10px] flex items-center gap-2 text-gray-500 uppercase tracking-wider">Extract Data</div>
+             <div className="font-bold text-[10px] flex items-center gap-2 text-gray-500 uppercase tracking-wider">Extracted evidence</div>
              <button disabled={!task.result} onClick={() => {
                 const blob = new Blob([JSON.stringify(task.result, null, 2)], { type: 'application/json' });
                 const url = URL.createObjectURL(blob);
