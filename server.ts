@@ -1,5 +1,4 @@
 import express from 'express';
-import { createServer as createViteServer } from 'vite';
 import path from 'node:path';
 import https from 'node:https';
 import dns from 'node:dns';
@@ -120,6 +119,7 @@ app.get('/api/health', (_req, res) => res.json({ service: 'ghost-operator', stat
 
 async function startServerInner() {
   if (!production) {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({ server: { middlewareMode: true }, appType: 'spa' });
     app.use(vite.middlewares);
   } else {
