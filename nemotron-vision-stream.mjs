@@ -76,6 +76,8 @@ export async function readNvidiaSSE(response, { onDelta = () => {}, maxBytes = 2
   consume(decoder.decode());
   if (!finished) throw new Error('NVIDIA stream terminated without [DONE].');
   if (finishReason === 'length') throw new Error('NVIDIA reasoning or answer was truncated by max_tokens.');
+  // Do not count filtered, interrupted, tool-call or unfinished generations as successful answers.
+  if (finishReason !== 'stop') throw new Error('NVIDIA response has no successful stop finish_reason.');
   if (!answer.trim()) throw new Error('NVIDIA returned no final answer.');
   return {
     model: NVIDIA_VL_MODEL,
