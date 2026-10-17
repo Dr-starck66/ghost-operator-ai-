@@ -9,15 +9,17 @@ export default function TaskBuilder() {
   const [goal, setGoal] = useState('');
   const [workflow, setWorkflow] = useState<'site_audit' | 'lead_research' | 'web_research'>('site_audit');
   const [error, setError] = useState('');
+  const [token, setToken] = useState(() => sessionStorage.getItem('ghost_admin_token') || '');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const navigate = useNavigate();
 
   const handleDeploy = async () => {
-    if(!url || !goal) return;
+    if(!url || !goal || !token) return;
     setIsSubmitting(true);
     setError('');
     try {
-       const res = await axios.post('/api/tasks', { url, goal, workflow });
+       sessionStorage.setItem('ghost_admin_token', token);
+       const res = await axios.post('/api/tasks', { url, goal, workflow }, { headers: { 'x-ghost-token': token } });
        navigate(`/dashboard/jobs/${res.data.taskId}`);
     } catch (e) {
        setError(axios.isAxiosError(e) ? (e.response?.data?.error || e.message) : String(e));
@@ -47,6 +49,12 @@ export default function TaskBuilder() {
           <p className="text-xs text-gray-500">Aucune action commerciale ni envoi d'email sans votre accord. Jusqu'à 5 pages pour un audit et 3 prospects vérifiés par mission.</p>
         </div>
 
+        <div className="space-y-3">
+          <label htmlFor="admin-token" className="text-xs font-bold text-gray-500 uppercase tracking-wider">Clé privée de votre agent</label>
+          <input id="admin-token" type="password" autoComplete="off" value={token} onChange={e => setToken(e.target.value)}
+            placeholder="Jeton administrateur ASTRA" className="w-full bg-white border border-gray-300 rounded px-4 py-3 text-sm" />
+          <p className="text-xs text-gray-500">Stockée uniquement dans cet onglet. Protège les missions et leurs résultats contre les accès publics.</p>
+        </div>
         {/* Entry Point */}
         <div className="space-y-3">
           <label className="text-xs font-bold text-gray-500 flex items-center gap-2 uppercase tracking-wider">
@@ -84,11 +92,11 @@ export default function TaskBuilder() {
         {/* Deploy */}
         <div className="pt-4 flex justify-end border-t border-gray-200">
           <button 
-            disabled={!url || !goal || isSubmitting}
+            disabled={!url || !goal || !token || isSubmitting}
             onClick={handleDeploy}
             className={cn(
               "flex items-center gap-2 px-6 py-2 rounded text-xs font-semibold transition-colors shadow-sm uppercase tracking-wider",
-              (!url || !goal || isSubmitting) 
+              (!url || !goal || !token || isSubmitting) 
                 ? "bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200" 
                 : "bg-blue-600 hover:bg-blue-700 text-white"
             )}
