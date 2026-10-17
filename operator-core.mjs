@@ -78,7 +78,7 @@ export function createStore(filename) {
   };
 }
 
-export async function extractSite(task, fetchPage, onProgress = () => {}) {
+export async function extractSite(task, fetchPage, onProgress = (_message) => {}) {
   const seed = validateTarget(task.url);
   const originHost = new URL(seed).hostname;
   const queue = [seed];
