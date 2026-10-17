@@ -284,6 +284,22 @@ async function boot() {
   app.listen(PORT, '0.0.0.0', () => {
     console.log('Ghost Operator server worker listening on port ' + PORT);
     void verifyNemotronOnBoot();
+    // One deduplicated, evidence-first mission proves the model is actually used by the team.
+    // The coordinator stores its task and SHA in /data; it does not send or publish anything.
+    if (process.env.ASTRA_NEMOTRON_TEAM_BOOTSTRAP !== '0') {
+      try {
+        const oneShot = astraTeam.create({
+          project: 'ghost_operator', intent: 'research',
+          goal: 'Auditer les titres HTML de Ghost Operator et produire une synthèse distincte par Nemotron, sans inventer de résultat.',
+          url: 'https://ghost-operator-astra-production.up.railway.app/'
+        });
+        console.log('ASTRA_NEMOTRON_TEAM_BOOTSTRAP ' + JSON.stringify({
+          id: oneShot.id, status: oneShot.status, deduplicated: Boolean(oneShot.deduplicated)
+        }));
+      } catch (cause: any) {
+        console.error('ASTRA_NEMOTRON_TEAM_BOOTSTRAP_FAIL ' + String(cause?.message || 'UNVERIFIED').slice(0,120));
+      }
+    }
     if (!process.env.GHOST_DATA_DIR) console.warn('GHOST_DATA_DIR not configured: mount a persistent volume for restart-safe hosting');
   });
 }
