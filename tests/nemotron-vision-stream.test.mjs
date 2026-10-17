@@ -69,6 +69,7 @@ test('rejects malformed or overlarge stream rather than saving forged results', 
   await assert.rejects(()=>readNvidiaSSE(responseFromChunks(['x'.repeat(250)]),{maxBytes:200}),/limit/);
 });
 
+
 test('a streamed answer is never PASS without the provider stop marker', async () => {
   for (const reason of [null, 'content_filter', 'tool_calls']) {
     const invalid=events(
