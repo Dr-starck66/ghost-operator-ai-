@@ -7,6 +7,7 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import dotenv from 'dotenv';
 import { createStore, extractSite, publicIPv4, validateTarget } from './operator-core.mjs';
+import { analyzeWithNemotron } from './nemotron-adapter.mjs';
 
 dotenv.config();
 
@@ -118,8 +119,36 @@ app.get('/api/tasks/:id', (req, res) => {
   const task = store.get(req.params.id);
   return task ? res.json(task) : res.status(404).json({ error: 'Task not found.' });
 });
+// Optional manual NVIDIA analysis. No background inference; no access to external tools.
+const aiRequestsInProgress = new Set<string>();
+app.post('/api/tasks/:id/analyze', async (req, res) => {
+  if (process.env.ASTRA_NVIDIA_ENABLED !== '1' || !process.env.NVIDIA_API_KEY) {
+    return res.status(503).json({ error: 'NVIDIA analysis is not configured. Extraction remains available.' });
+  }
+  const task = store.get(req.params.id);
+  if (!task) return res.status(404).json({ error: 'Task not found.' });
+  if (task.status !== 'completed' || !task.result?.pages?.length) {
+    return res.status(409).json({ error: 'Finish the extraction before requesting analysis.' });
+  }
+  if (task.aiAnalysis) return res.json(task.aiAnalysis); // Idempotent; prevents repeat credit usage.
+  if (aiRequestsInProgress.has(task.id)) {
+    return res.status(409).json({ error: 'Analysis is already in progress.' });
+  }
+  aiRequestsInProgress.add(task.id);
+  try {
+    const analysis = await analyzeWithNemotron(task, { apiKey: process.env.NVIDIA_API_KEY });
+    store.patch(task.id, { aiAnalysis: analysis }, '[NVIDIA] Optional read-only analysis saved. Not independently verified.');
+    return res.json(analysis);
+  } catch (error: any) {
+    const detail = String(error.message || error);
+    const code = /^NVIDIA endpoint returned HTTP \d+\.$/.test(detail) ? detail : 'NVIDIA analysis unavailable.';
+    return res.status(502).json({ error: code });
+  } finally {
+    aiRequestsInProgress.delete(task.id);
+  }
+});
 // Intentionally no arbitrary-URL /api/scrape or client-controlled status override.
-app.get('/api/health', (_req, res) => res.json({ service: 'ghost-operator', status: 'ready', autonomous_queue: true, paid_ai_calls: false }));
+app.get('/api/health', (_req, res) => res.json({ service: 'ghost-operator', status: 'ready', autonomous_queue: true, automatic_ai_calls: false, nemotron_configured_not_verified: process.env.ASTRA_NVIDIA_ENABLED === '1' && Boolean(process.env.NVIDIA_API_KEY) }));
 
 async function startServerInner() {
   if (!production) {
