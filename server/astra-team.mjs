@@ -26,8 +26,10 @@ const PLANS = Object.freeze({
 const WORKFLOW = Object.freeze({ research: 'web_research', seo: 'site_audit', prospect: 'lead_research' });
 const sha = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 
-export function createAstraTeam({ filePath, taskStore, autoStart = true, tickMs = 2500 }) {
+export function createAstraTeam({ filePath, taskStore, autoStart = true, tickMs = 2500, aiAnalyze = null, aiDailyLimit = 3 }) {
   if (!filePath || !taskStore?.add || !taskStore?.get || !taskStore?.list) throw Error('ASTRA team requires durable path and Ghost task store');
+  if (aiAnalyze !== null && typeof aiAnalyze !== 'function') throw Error('AI analyzer must be a function');
+  if (!Number.isInteger(aiDailyLimit) || aiDailyLimit < 0 || aiDailyLimit > 10) throw Error('Invalid AI daily budget');
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   let missions = [];
   if (fs.existsSync(filePath)) {
@@ -41,6 +43,16 @@ export function createAstraTeam({ filePath, taskStore, autoStart = true, tickMs 
       fs.writeFileSync(tmp, JSON.stringify({ version: 1, missions }, null, 2), { mode: 0o600 });
       fs.renameSync(tmp, filePath);
     } finally { if (fs.existsSync(tmp)) fs.rmSync(tmp); }
+  }
+  // An interrupted inference must not silently retry: provider usage may already have occurred.
+  // We keep the attempt evidence and explicitly report UNVERIFIED after a restart.
+  for (const m of missions) {
+    if (m.ai?.status === 'running') {
+      m.ai.status = 'UNVERIFIED';
+      m.ai.reason = 'Inference interrupted by process restart; no automatic second provider call';
+      m.updatedAt = new Date().toISOString();
+      save();
+    }
   }
   function view(m) { return structuredClone(m); }
   function list() { return missions.map(view).sort((a,b) => b.createdAt.localeCompare(a.createdAt)); }
@@ -71,6 +83,57 @@ export function createAstraTeam({ filePath, taskStore, autoStart = true, tickMs 
     catch (e) { missions = missions.filter(m => m !== mission); throw e; }
     return view(mission);
   }
+
+  function startAiAnalysis(m) {
+    if (!aiAnalyze || m.ai?.status !== 'pending') return;
+    const today = new Date().toISOString().slice(0, 10);
+    const used = missions.filter(item => item.ai?.attemptedAt?.startsWith(today)).length;
+    if (used >= aiDailyLimit) {
+      m.ai = { status: 'SKIPPED', reason: 'ASTRA_AI_DAILY_LIMIT', quotaDate: today };
+      append(m, 'AI SKIPPED: server-side daily quota reached; HTTP audit unaffected');
+      return;
+    }
+    // Re-verify every source against the deterministic auditor before a model sees it.
+    const evidence = m.steps.map(s => {
+      const task = taskStore.get(s.taskId);
+      if (!task || sha(task.result) !== s.resultSha256 || task.result?.evidenceSha256 !== s.evidenceSha256)
+        return null;
+      return {
+        role: s.role, source: task.url, evidenceSha256: s.evidenceSha256,
+        observedReport: JSON.stringify(task.result.report || {}).slice(0, 1900)
+      };
+    });
+    if (evidence.includes(null)) {
+      m.ai = { status: 'FAIL', reason: 'Evidence integrity changed before AI inference' };
+      append(m, 'AI FAIL: referenced source evidence is no longer reproducible');
+      return;
+    }
+    m.ai = { status: 'running', attemptedAt: new Date().toISOString(),
+      provider: 'NVIDIA', model: 'nvidia/nemotron-3.5-super-vl-120b-a12b',
+      evidenceProofSha256: m.audit.proofSha256 };
+    append(m, 'AI running: one bounded private NVIDIA synthesis using verified HTTP findings');
+    Promise.resolve().then(() => aiAnalyze({
+      mission: { id: m.id, project: m.project, intent: m.intent, goal: m.goal },
+      evidence, evidenceProofSha256: m.audit.proofSha256
+    })).then(result => {
+      if (m.ai?.status !== 'running') return;
+      if (result?.status !== 'PASS' || typeof result.answer !== 'string' || !result.answer.trim())
+        throw Error('INVALID_MODEL_OUTPUT');
+      const answer = result.answer.slice(0, 5000);
+      m.ai = { ...m.ai, status: 'PASS', answer,
+        answerSha256: sha(answer), responseId: String(result.responseId || '').slice(0, 100),
+        usage: result.usage || null, checkedAt: new Date().toISOString(),
+        qualification: 'Model synthesis only; original HTTP observations are separately audited' };
+      append(m, 'AI PASS: model response saved with a separate digest; evidence audit unchanged');
+    }).catch(error => {
+      if (m.ai?.status !== 'running') return;
+      m.ai = { ...m.ai, status: 'FAIL',
+        reason: String(error?.code || 'NVIDIA_INFERENCE_FAILED').slice(0, 80),
+        checkedAt: new Date().toISOString() };
+      append(m, 'AI FAIL: upstream or persistence error; deterministic evidence preserved');
+    });
+  }
+
   let ticking = false;
   function tick() {
     if (ticking) return;
@@ -93,6 +156,7 @@ export function createAstraTeam({ filePath, taskStore, autoStart = true, tickMs 
               proofSha256: sha(m.steps.map(s => [s.taskId, s.resultSha256, s.evidenceSha256])),
               qualification: 'Validated stored HTTP-extraction evidence, not business outcomes or search rankings' };
             m.status = 'completed';
+            m.ai = { status: aiAnalyze ? 'pending' : 'disabled' };
             append(m, 'AUDITOR PASS: all underlying execution records cross-checked');
           }
           continue;
@@ -133,6 +197,8 @@ export function createAstraTeam({ filePath, taskStore, autoStart = true, tickMs 
         m.cursor++; m.taskId = null;
         append(m, 'PASS: ' + role + ' HTTP extraction recorded; next step queued');
       }
+      // AI synthesis never decides the HTTP auditor's PASS and never publishes or sends anything.
+      for (const m of missions.filter(x => x.status === 'completed' && x.ai?.status === 'pending')) startAiAnalysis(m);
     } finally { ticking = false; }
   }
   const timer = autoStart ? setInterval(() => {
@@ -142,10 +208,14 @@ export function createAstraTeam({ filePath, taskStore, autoStart = true, tickMs 
   return {
     create, list, get, tick, close: () => { if (timer) clearInterval(timer); },
     status: () => ({ mode: 'internal_read_only', outboundEnabled: false, publishingEnabled: false,
-      liveLLMAgents: false, missions: missions.length,
+      liveLLMAgents: Boolean(aiAnalyze), provider: aiAnalyze ? 'NVIDIA_NEMOTRON' : null,
+      aiSuccessfulMissions: missions.filter(m => m.ai?.status === 'PASS').length,
+      missions: missions.length,
       completed: missions.filter(m => m.status === 'completed').length,
       failed: missions.filter(m => m.status === 'failed').length,
       running: missions.filter(m => ['running', 'pending'].includes(m.status)).length,
-      storage: filePath, agents: ASTRA_TEAM })
+      storage: filePath, agents: aiAnalyze
+        ? [...ASTRA_TEAM, { id: 'analyst', role: 'ASTRA NEMOTRON ANALYST', capability: 'nvidia_llm_synthesis', enabled: true }]
+        : ASTRA_TEAM })
   };
 }
