@@ -5,6 +5,8 @@ import dotenv from 'dotenv';
 import { createTaskStore } from './server/task-store.mjs';
 import { executeExtraction, validateTarget } from './server/executor.mjs';
 import { recordMission } from './astra/mission-ledger.mjs';
+import { readFile } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
 dotenv.config();
 
 const app = express();
@@ -72,6 +74,34 @@ app.get('/api/astra/missions', async (req, res) => {
     return res.json(data);
   } catch (error: any) { return res.status(500).json({ error: error?.message || 'Read failed' }); }
 });
+// Durable, restart-aware boot proof. Each boot creates a real mission using the same ledger as the API.
+const selftest: any = { status: 'pending', bootId: randomUUID(), volume: dataDir };
+async function runSelftest() {
+  const file = path.join(dataDir, 'astra-selftest-missions.json');
+  try {
+    let previous: any = null;
+    try {
+      const history = JSON.parse(await readFile(file, 'utf8'));
+      previous = history.missions?.at(-1) || null;
+      if (previous) {
+        const actual = createHash('sha256').update(JSON.stringify(previous.result)).digest('hex');
+        if (actual !== previous.proofSha256) throw new Error('Previous mission SHA256 mismatch');
+      }
+    } catch (e: any) { if (e.code !== 'ENOENT') throw e; }
+    const mission = { id: 'boot_' + selftest.bootId.replaceAll('-', ''), idea: 'Railway persistent mission boot proof', result: { bootId: selftest.bootId, marker: 'ASTRA_PERSISTENCE_PROOF_V1' } };
+    const saved = await recordMission(file, mission);
+    const history = JSON.parse(await readFile(file, 'utf8'));
+    const recovered = history.missions.find((x: any) => x.id === saved.id);
+    if (!recovered || recovered.proofSha256 !== saved.proofSha256) throw new Error('Mission write/read mismatch');
+    Object.assign(selftest, { status: 'pass', currentMissionId: saved.id, currentSha256: saved.proofSha256, previousMissionId: previous?.id || null, previousSha256Verified: Boolean(previous), restartPersistenceVerified: Boolean(previous), missionCount: history.missions.length });
+    console.log('ASTRA_SELFTEST ' + JSON.stringify(selftest));
+  } catch (e: any) {
+    Object.assign(selftest, { status: 'fail', error: e?.message || String(e) });
+    console.error('ASTRA_SELFTEST ' + JSON.stringify(selftest));
+  }
+}
+app.get('/api/astra/selftest', (_req, res) => res.status(selftest.status === 'fail' ? 503 : 200).json({ status: selftest.status, bootId: selftest.bootId, currentMissionId: selftest.currentMissionId, currentSha256: selftest.currentSha256, previousMissionId: selftest.previousMissionId, previousSha256Verified: selftest.previousSha256Verified, restartPersistenceVerified: selftest.restartPersistenceVerified, missionCount: selftest.missionCount, error: selftest.error }));
+
 app.get('/api/health', (_req, res) => {
   res.json({
     status: 'ok',
@@ -83,6 +113,7 @@ app.get('/api/health', (_req, res) => {
 });
 
 async function boot() {
+  await runSelftest();
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({ server: { middlewareMode: true }, appType: 'spa' });
     app.use(vite.middlewares);
