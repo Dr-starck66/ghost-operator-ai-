@@ -55,4 +55,4 @@ node --check nemotron-vision-live.mjs
 node nemotron-vision-live.mjs
 ```
 
-On 2026-10-17, the 11 local Node.js adapter/vision tests passed with mocked responses. This does **not** verify a live NVIDIA inference, accuracy of the traffic sign, production integration or deployment. The default authenticated Ghost extraction endpoint continues to work without NVIDIA.
+On 2026-10-17, the **13 local Node.js adapter/vision tests PASSED** (mocked NVIDIA output). The two additional regression tests reject non-`stop` finish reasons and verify UTF-8 SSE framing across single-byte chunks. Reproducibility: Git blob `nemotron-vision-stream.mjs` = `ee37d4d3903093180a7cb2f5636a404bc5ee90be`; blob `tests/nemotron-vision-stream.test.mjs` = `5291fd3d9cac94db9d600f8d0bb170c8e7ded6a0`; both match the locally tested files. The unmodified adapter tests passed too. **This does not verify a live NVIDIA inference, traffic-sign accuracy, a complete Express build, production integration, or deployment.** The local execution environment has no NVIDIA_API_KEY and cannot resolve external domains. The default authenticated Ghost extraction endpoint continues to work without NVIDIA.
