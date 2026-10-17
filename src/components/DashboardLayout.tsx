@@ -51,8 +51,8 @@ export default function DashboardLayout() {
               <User className="w-4 h-4 text-white" />
             </div>
             <div>
-              <div className="text-sm font-medium text-gray-900">Production Mode</div>
-              <div className="text-[10px] text-gray-500">Usage: 84% of Pro Plan</div>
+              <div className="text-sm font-medium text-gray-900">Mode serveur privé</div>
+              <div className="text-[10px] text-gray-500">Aucun abonnement IA requis</div>
             </div>
           </div>
         </div>
@@ -62,12 +62,12 @@ export default function DashboardLayout() {
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden bg-gray-50">
         <header className="h-16 border-b border-gray-200 flex items-center justify-between px-8 bg-white">
            <div className="font-medium text-gray-900 flex items-center gap-2">
-             <span className="text-gray-500">Project:</span> Startup Data
+             <span className="text-gray-500">Projet :</span> ASTRA Ω / Ghost Operator
            </div>
            <div className="flex items-center gap-4">
-             <div className="flex items-center gap-2 text-[10px] font-bold bg-green-50 text-green-600 px-2 py-0.5 rounded-full border border-green-200 uppercase">
+             <div className="flex items-center gap-2 text-[10px] font-bold bg-gray-50 text-gray-600 px-2 py-0.5 rounded-full border border-gray-200 uppercase">
                <Activity className="w-3 h-3 text-green-500 status-pulse" />
-               Active
+               Statut via API /health
              </div>
            </div>
         </header>
