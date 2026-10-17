@@ -72,12 +72,26 @@ export function createAstraTeam({ filePath, taskStore, autoStart = true, tickMs 
     catch (e) { missions = missions.filter(m => m !== mission); throw e; }
     return view(mission);
   }
+  // Explicit retry preserves the failed attempt for audit; max two retries, never unbounded.
+  function retry(id) {
+    const m = missions.find(x => x.id === id);
+    if (!m || m.status !== 'failed') throw Error('Mission not failed or missing');
+    if ((m.restartAttempts || 0) >= 2) throw Error('Retry limit reached');
+    m.history ||= [];
+    m.history.push({ status: m.status, audit: m.audit, steps: m.steps, at: new Date().toISOString() });
+    m.restartAttempts = (m.restartAttempts || 0) + 1;
+    m.status = 'pending'; m.cursor = 0; m.taskId = null; m.steps = []; m.audit = null;
+    m.failedTaskIds = []; m.retryAttempts = 0; m.nextAttemptAt = 0;
+    append(m, 'Retry approved after recorded failure; previous proof preserved');
+    return view(m);
+  }
   let ticking = false;
   function tick() {
     if (ticking) return;
     ticking = true;
     try {
       for (const m of missions.filter(x => x.status === 'pending' || x.status === 'running')) {
+        if (m.nextAttemptAt && Date.now() < m.nextAttemptAt) continue;
         const role = m.plan[m.cursor];
         if (!role) {
           const verified = m.steps.length === m.plan.length && m.steps.every(s => {
@@ -91,6 +105,7 @@ export function createAstraTeam({ filePath, taskStore, autoStart = true, tickMs 
             append(m, 'AUDITOR FAIL: evidence not reproducible from stored task');
           } else {
             m.audit = { status: 'PASS', verifiedTasks: m.steps.length,
+              retainedFailedAttempts: (m.failedTaskIds || []).length + (m.history || []).length,
               proofSha256: sha(m.steps.map(s => [s.taskId, s.resultSha256, s.evidenceSha256])),
               qualification: 'Validated stored HTTP-extraction evidence, not business outcomes or search rankings' };
             m.status = 'completed';
@@ -101,7 +116,8 @@ export function createAstraTeam({ filePath, taskStore, autoStart = true, tickMs 
         const taggedGoal = m.goal + ' [ASTRA_TEAM:' + m.id + ':' + m.cursor + ']';
         if (!m.taskId) {
           // Recover a task persisted just before an interrupted coordinator write.
-          const existing = taskStore.list().find(t => t.goal === taggedGoal && t.workflow === WORKFLOW[role]);
+          const existing = taskStore.list().find(t => t.goal === taggedGoal &&
+            t.workflow === WORKFLOW[role] && !(m.failedTaskIds || []).includes(t.id));
           const task = existing || taskStore.add(m.url, taggedGoal, WORKFLOW[role], { maxCandidates: 5 });
           m.taskId = task.id;
           m.status = 'running';
@@ -114,8 +130,19 @@ export function createAstraTeam({ filePath, taskStore, autoStart = true, tickMs 
           append(m, 'FAIL: missing child task ' + m.taskId); continue;
         }
         if (task.status === 'failed') {
-          m.status = 'failed'; m.audit = { status: 'FAIL', reason: String(task.error || 'Task failed').slice(0, 300) };
-          append(m, 'FAIL: ' + role + ' task failed'); continue;
+          const error = String(task.error || 'Task failed').slice(0, 300);
+          const transient = /No verified HTTP evidence|timed?out|ECONN|network|ENOTFOUND|EAI_AGAIN/i.test(error);
+          if (transient && (m.retryAttempts || 0) < 2) {
+            m.failedTaskIds ||= [];
+            m.failedTaskIds.push(m.taskId);
+            m.retryAttempts = (m.retryAttempts || 0) + 1;
+            m.nextAttemptAt = Date.now() + m.retryAttempts * 15000;
+            m.taskId = null;
+            append(m, 'PARTIAL: ' + role + ' transient HTTP failure; bounded retry ' + m.retryAttempts + '/2: ' + error);
+            continue;
+          }
+          m.status = 'failed'; m.audit = { status: 'FAIL', reason: error };
+          append(m, 'FAIL: ' + role + ' task failed: ' + error); continue;
         }
         if (task.status !== 'completed') continue;
         const result = task.result;
@@ -131,7 +158,7 @@ export function createAstraTeam({ filePath, taskStore, autoStart = true, tickMs 
           potentialMatches: result.report?.potentialMatches ?? null,
           unverified: result.report?.unverified ?? null,
           totalIssues: result.report?.totalIssues ?? null });
-        m.cursor++; m.taskId = null;
+        m.cursor++; m.taskId = null; m.nextAttemptAt = 0;
         append(m, 'PASS: ' + role + ' HTTP extraction recorded; next step queued');
       }
     } finally { ticking = false; }
@@ -141,7 +168,7 @@ export function createAstraTeam({ filePath, taskStore, autoStart = true, tickMs 
   }, tickMs) : null;
   if (timer) timer.unref();
   return {
-    create, list, get, tick, close: () => { if (timer) clearInterval(timer); },
+    create, retry, list, get, tick, close: () => { if (timer) clearInterval(timer); },
     status: () => ({ mode: 'internal_read_only', outboundEnabled: false, publishingEnabled: false,
       liveLLMAgents: false, missions: missions.length,
       completed: missions.filter(m => m.status === 'completed').length,
