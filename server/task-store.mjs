@@ -68,13 +68,14 @@ export function createTaskStore({ filePath, execute, autoStart = true }) {
       setImmediate(drain);
     }
   }
-  const add = (rawUrl, rawGoal) => {
+  const add = (rawUrl, rawGoal, workflow = 'web_research') => {
     const url = new URL(rawUrl);
     if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) throw new Error('Only public HTTP(S) URLs are allowed');
     if (typeof rawGoal !== 'string' || !rawGoal.trim() || rawGoal.length > 2000) throw new Error('Invalid goal');
+    if (!['site_audit', 'lead_research', 'web_research'].includes(workflow)) throw new Error('Unsupported workflow');
     if (Object.keys(tasks).length >= 2000) throw new Error('Queue capacity reached');
     const id = 'task_' + randomUUID();
-    tasks[id] = { id, url: url.href, goal: rawGoal.trim(), status: 'pending', logs: ['Task persisted on server'], createdAt: Date.now() };
+    tasks[id] = { id, url: url.href, goal: rawGoal.trim(), workflow, status: 'pending', logs: ['Task persisted on server'], createdAt: Date.now() };
     try { save(); } catch (error) { delete tasks[id]; throw error; }
     schedule();
     return get(id);
