@@ -13,7 +13,7 @@ test('rejects unsafe address spaces', () => {
 });
 
 test('validates public HTTPS URLs without credentials, IP literals, or nonstandard ports', () => {
-  for (const address of ['http://example.com', 'https://localhost/', 'https://127.0.0.1', 'https://user:pass@example.com/', 'https://example.com:444/', 'https://metadata.google.internal/', 'file:///etc/passwd']) {
+  for (const address of ['http://example.com', 'https://localhost/', 'https://127.0.0.1', 'https://[::ffff:127.0.0.1]/', 'https://user:pass@example.com/', 'https://example.com:444/', 'https://metadata.google.internal/', 'file:///etc/passwd']) {
     assert.throws(() => validateTarget(address), undefined, address);
   }
   assert.equal(validateTarget('https://example.com/a#x'), 'https://example.com/a');
