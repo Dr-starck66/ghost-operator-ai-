@@ -5,6 +5,7 @@ import TaskBuilder from './pages/TaskBuilder';
 import JobLogs from './pages/JobLogs';
 import JobsList from './pages/JobsList';
 import Campaigns from './pages/Campaigns';
+import Nemotron from './pages/Nemotron';
 
 export default function App() {
   return (
@@ -15,6 +16,7 @@ export default function App() {
         <Route path="build" element={<TaskBuilder />} />
         <Route path="jobs/:id" element={<JobLogs />} />
         <Route path="campaigns" element={<Campaigns />} />
+        <Route path="nemotron" element={<Nemotron />} />
       </Route>
     </Routes>
   );
