@@ -4,6 +4,7 @@ import path from 'node:path';
 import dotenv from 'dotenv';
 import { createTaskStore } from './server/task-store.mjs';
 import { createProspectBridge } from './server/prospect-bridge.mjs';
+import { createAstraTeam } from './server/astra-team.mjs';
 import { validateTarget } from './server/executor.mjs';
 import { executeMission, selectWorkflow } from './server/mission-agent.mjs';
 import { NEMOTRON_MODEL, validateNemotronInput, invokeNemotron } from './server/nemotron.mjs';
@@ -21,6 +22,7 @@ const store = createTaskStore({
   execute: executeMission
 });
 const prospectBridge = createProspectBridge({filePath:path.join(dataDir,'astra-prospect-campaigns.json'),taskStore:store});
+const astraTeam = createAstraTeam({filePath:path.join(dataDir,'astra-team.json'),taskStore:store});
 
 // Access protection is mandatory if opting into a potentially metered LLM provider.
 if (process.env.GHOST_AI_MODE === 'gemini' && !process.env.GHOST_ADMIN_TOKEN) {
@@ -51,6 +53,26 @@ app.post('/api/prospect/campaigns/:id/approve',sales(req=>prospectBridge.approve
 app.post('/api/prospect/campaigns/:id/suppress',sales(req=>prospectBridge.suppress(req.params.id,req.body?.email)));
 app.post('/api/prospect/campaigns/:id/events',sales(req=>prospectBridge.event(req.params.id,req.body)));
 app.get('/api/prospect/campaigns/:id/drafts',sales(req=>({drafts:prospectBridge.draftPreview(req.params.id)})));
+
+// Private ASTRA Ω team, using existing read-only Ghost executors (no provider charges).
+app.use('/api/astra/team', (req, res, next) => {
+  if (!process.env.GHOST_ADMIN_TOKEN || req.get('x-ghost-token') !== process.env.GHOST_ADMIN_TOKEN)
+    return res.status(401).json({ error: 'Unauthorized' });
+  res.set('Cache-Control', 'no-store');
+  next();
+});
+app.get('/api/astra/team', (_req, res) => res.json(astraTeam.status()));
+app.get('/api/astra/team/missions', (_req, res) => res.json(astraTeam.list()));
+app.post('/api/astra/team/missions', (req, res) => {
+  try {
+    const created = astraTeam.create(req.body);
+    res.status(created.deduplicated ? 200 : 202).json(created);
+  } catch (e: any) { res.status(400).json({ error: String(e?.message || 'Invalid team mission').slice(0,200) }); }
+});
+app.get('/api/astra/team/missions/:id', (req, res) => {
+  const mission = astraTeam.get(req.params.id);
+  return mission ? res.json(mission) : res.status(404).json({ error: 'Mission not found' });
+});
 
 app.post('/api/tasks', (req, res) => {
   try {
@@ -225,6 +247,7 @@ app.get('/api/health', (_req, res) => {
     agentWorkflows: ['site_audit', 'lead_research', 'web_research'],
     b2bCampaigns: 'review_only',
     b2bOutboundEnabled: false,
+    astraMultiAgents: { mode: 'internal_read_only', missions: astraTeam.status().missions, running: astraTeam.status().running },
     tasks: store.status(),
     persistentVolumeConfigured: Boolean(process.env.GHOST_DATA_DIR),
     aiMode: process.env.GHOST_AI_MODE === 'gemini' ? 'gemini' : 'deterministic',
