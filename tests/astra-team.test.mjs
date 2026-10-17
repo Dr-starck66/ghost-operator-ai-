@@ -10,8 +10,8 @@ function fixture(t) {
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const tasks = [];
   const store = {
-    add(url, goal, workflow) {
-      const task = { id: 'task_' + (tasks.length + 1), url, goal, workflow, status: 'pending' };
+    add(url, goal, workflow, options = {}) {
+      const task = { id: 'task_' + (tasks.length + 1), url, goal, workflow, noPaidAI: options.noPaidAI === true, status: 'pending' };
       tasks.push(task);
       return structuredClone(task);
     },
@@ -40,10 +40,12 @@ test('real existing Ghost workflows are delegated sequentially; auditor cross-ch
   team.tick();
   assert.equal(f.store.list().length, 1);
   assert.equal(f.store.list()[0].workflow, 'web_research');
+  assert.equal(f.store.list()[0].noPaidAI, true);
   f.store.complete(f.store.list()[0].id);
   team.tick(); team.tick();
   assert.equal(f.store.list().length, 2);
   assert.equal(f.store.list()[1].workflow, 'site_audit');
+  assert.equal(f.store.list()[1].noPaidAI, true);
   f.store.complete(f.store.list()[1].id);
   team.tick(); team.tick();
   const done = team.get(m.id);
@@ -153,4 +155,23 @@ test('empty public-page extraction retains failure and schedules only a bounded 
   assert.equal(f.store.list().length, 1);
   assert.equal(current.audit, undefined);
   team.close();
+});
+
+
+test('Conway policy refuses a tampered persisted plan before creating any child task', t => {
+  const f = fixture(t);
+  const first = f.make();
+  const m = first.create({ ...input, intent: 'research' });
+  first.close();
+  const stored = JSON.parse(fs.readFileSync(f.filePath, 'utf8'));
+  stored.missions[0].plan = ['spawn_child'];
+  fs.writeFileSync(f.filePath, JSON.stringify(stored));
+  const second = f.make();
+  second.tick();
+  const denied = second.get(m.id);
+  assert.equal(denied.status, 'failed');
+  assert.equal(denied.audit.status, 'FAIL');
+  assert.match(denied.audit.reason, /WORKFLOW_NOT_ALLOWED/);
+  assert.equal(f.store.list().length, 0);
+  second.close();
 });

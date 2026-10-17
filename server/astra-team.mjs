@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { validateTarget } from './executor.mjs';
+import { evaluateAstraPolicy } from './astra-conway-policy.mjs';
 
 export const ASTRA_TEAM = Object.freeze([
   { id: 'commander', role: 'ASTRA COMMANDER', capability: 'coordination', enabled: true },
@@ -185,12 +186,19 @@ export function createAstraTeam({ filePath, taskStore, autoStart = true, tickMs 
           }
           continue;
         }
+        const policy = evaluateAstraPolicy({ workflow: WORKFLOW[role], estimatedCostUSD: 0, sideEffects: false });
+        if (policy.action !== 'allow') {
+          m.status = 'failed';
+          m.audit = { status: 'FAIL', reason: 'ASTRA_POLICY_' + policy.reason };
+          append(m, 'FAIL: rejected forbidden action ' + String(role));
+          continue;
+        }
         const taggedGoal = m.goal + ' [ASTRA_TEAM:' + m.id + ':' + m.cursor + ']';
         if (!m.taskId) {
           // Recover a task persisted just before an interrupted coordinator write.
           const existing = taskStore.list().find(t => t.goal === taggedGoal &&
             t.workflow === WORKFLOW[role] && !(m.failedTaskIds || []).includes(t.id));
-          const task = existing || taskStore.add(m.url, taggedGoal, WORKFLOW[role], { maxCandidates: 5 });
+          const task = existing || taskStore.add(m.url, taggedGoal, WORKFLOW[role], { maxCandidates: 5, noPaidAI: true });
           m.taskId = task.id;
           m.status = 'running';
           append(m, (existing ? 'Recovered' : 'Scheduled') + ' ' + role + ' task ' + task.id);

@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { canUsePaidInference } from './astra-conway-policy.mjs';
 import * as cheerio from 'cheerio';
 import dns from 'node:dns';
 import net from 'node:net';
@@ -127,7 +128,7 @@ export async function executeExtraction(task, log) {
     pageEvidence: pages.map(({ url, title, headings, metaDescription, canonical, robots, lang, h1Count, jsonLdCount }) =>
       ({ url, title, headings, metaDescription, canonical, robots, lang, h1Count, jsonLdCount })),
     externalLinks: [...externalEvidence.values()].slice(0, 150), errors };
-  if (process.env.GHOST_AI_MODE === 'gemini') {
+  if (canUsePaidInference(task, process.env.GHOST_AI_MODE)) {
     if (!process.env.GEMINI_API_KEY) throw new Error('Gemini mode configured but server-side GEMINI_API_KEY is missing');
     const { GoogleGenAI } = await import('@google/genai');
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
