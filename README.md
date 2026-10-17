@@ -18,3 +18,19 @@ View your app in AI Studio: https://ai.studio/apps/f2d09ad6-438c-4f60-94c2-6165b
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+
+
+## ASTRA Ω — optional NVIDIA Nemotron 3.5 Super VL integration
+
+The production extraction queue is unchanged. NVIDIA calls are **OFF by default**. The extra inference analyzes only already-extracted evidence, not raw browsing sessions. The model has **no tools** and cannot execute actions. Its output remains labeled **UNVERIFIED**.
+
+1. On a hosting service that already runs this Express application, set `NVIDIA_API_KEY` using the platform's **secret manager** (never commit or paste it into a public chat). Set `ASTRA_NVIDIA_ENABLED=1` only after confirming that the NVIDIA endpoint's trial limit meets your budget. Missing flag or key results in HTTP 503 and **no API call**.
+2. Authenticate using the existing `GHOST_OPERATOR_USER` and `GHOST_OPERATOR_PASSWORD`; create and complete a normal extraction via `POST /api/tasks`.
+3. Send `POST /api/tasks/:id/analyze` (Basic auth) to request one opt-in analysis of that completed task. The response is persisted as `aiAnalysis` without changing extraction evidence; repeated calls return the saved analysis without another paid inference.
+4. The server's `GET /api/health` field `nemotron_configured_not_verified` only shows configuration, **not** actual model availability.
+
+Independent no-key tests: `node --test tests/nemotron-adapter.test.mjs`. Live provider smoke: `NVIDIA_API_KEY=... node nemotron-live-smoke.mjs` (text), optional `NVIDIA_LIVE_VISION=1` (adds public demonstration image). The smoke is manual and not part of default tests. It reports latency, text, HTTP status and token usage, but never the key. Hosting, e2e production, API credits, vision and video capabilities must each be verified separately.
+
+Provider: https://build.nvidia.com/nvidia/nemotron-3.5-super-vl-120b-a12b
+
+**Security:** HTML excerpts are untrusted; the prompt asks the model to treat them as data, and model output never drives tools or write actions. Prompt-injection resistance is not guaranteed; no financial, privileged, or irreversible steps are authorized by model output.
