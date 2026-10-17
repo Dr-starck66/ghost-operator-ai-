@@ -46,7 +46,7 @@ export default function TaskBuilder() {
             <option value="lead_research">Recherche et qualification de prospects publics</option>
             <option value="web_research">Recherche web sourcée</option>
           </select>
-          <p className="text-xs text-gray-500">Aucune action commerciale ni envoi d'email sans votre accord. Jusqu'à 5 pages pour un audit et 3 prospects vérifiés par mission.</p>
+          <p className="text-xs text-gray-500">Aucune action commerciale ni envoi d'email sans votre accord. Jusqu'à 5 pages pour un audit et 3 sites candidats inspectés par mission.</p>
         </div>
 
         <div className="space-y-3">
