@@ -6,6 +6,7 @@ import JobLogs from './pages/JobLogs';
 import JobsList from './pages/JobsList';
 import Campaigns from './pages/Campaigns';
 import Nemotron from './pages/Nemotron';
+import AstraTeam from './pages/AstraTeam';
 
 export default function App() {
   return (
@@ -17,6 +18,7 @@ export default function App() {
         <Route path="jobs/:id" element={<JobLogs />} />
         <Route path="campaigns" element={<Campaigns />} />
         <Route path="nemotron" element={<Nemotron />} />
+        <Route path="astra-team" element={<AstraTeam />} />
       </Route>
     </Routes>
   );
