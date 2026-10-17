@@ -81,7 +81,10 @@ export function createAstraTeam({ filePath, taskStore, autoStart = true, tickMs 
     m.history.push({ status: m.status, audit: m.audit, steps: m.steps, at: new Date().toISOString() });
     m.restartAttempts = (m.restartAttempts || 0) + 1;
     m.status = 'pending'; m.cursor = 0; m.taskId = null; m.steps = []; m.audit = null;
-    m.failedTaskIds = []; m.retryAttempts = 0; m.nextAttemptAt = 0;
+    // Exclude all tasks of prior runs, otherwise idempotency recovery would reattach a FAILED task.
+    m.failedTaskIds = taskStore.list().filter(t =>
+      typeof t.goal === 'string' && t.goal.includes('[ASTRA_TEAM:' + m.id + ':')).map(t => t.id);
+    m.retryAttempts = 0; m.nextAttemptAt = 0;
     append(m, 'Retry approved after recorded failure; previous proof preserved');
     return view(m);
   }
