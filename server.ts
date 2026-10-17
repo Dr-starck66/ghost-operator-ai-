@@ -69,6 +69,10 @@ app.post('/api/astra/team/missions', (req, res) => {
     res.status(created.deduplicated ? 200 : 202).json(created);
   } catch (e: any) { res.status(400).json({ error: String(e?.message || 'Invalid team mission').slice(0,200) }); }
 });
+app.post('/api/astra/team/missions/:id/retry', (req, res) => {
+  try { return res.status(202).json(astraTeam.retry(req.params.id)); }
+  catch (e: any) { return res.status(409).json({ error: String(e?.message || e).slice(0,200) }); }
+});
 app.get('/api/astra/team/missions/:id', (req, res) => {
   const mission = astraTeam.get(req.params.id);
   return mission ? res.json(mission) : res.status(404).json({ error: 'Mission not found' });
@@ -281,6 +285,21 @@ async function boot() {
           id: proof.id, status: proof.status, deduplicated: Boolean(proof.deduplicated),
           project: proof.project, intent: proof.intent
         }));
+        // Railway edge briefly returned HTTP 499 during the previous cut-over.
+        // Retry the recorded failed mission only after routing stabilizes.
+        setTimeout(() => {
+          try {
+            const current = astraTeam.get(proof.id);
+            if (current?.status === 'failed') {
+              const retry = astraTeam.retry(proof.id);
+              console.log('ASTRA_TEAM_BOOT_REPAIR ' + JSON.stringify({
+                id: retry.id, restartAttempts: retry.restartAttempts, status: retry.status
+              }));
+            }
+          } catch (cause: any) {
+            console.warn('ASTRA_TEAM_BOOT_REPAIR_SKIPPED ' + String(cause?.message || cause));
+          }
+        }, 30000).unref();
       } catch (cause: any) {
         console.error('ASTRA_TEAM_BOOTSTRAP_FAIL ' + String(cause?.message || cause));
       }
