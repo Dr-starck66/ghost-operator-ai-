@@ -68,3 +68,22 @@ test('rejects malformed or overlarge stream rather than saving forged results', 
   await assert.rejects(()=>readNvidiaSSE(responseFromChunks(['data: {bad json}\n\n'])),/Malformed/);
   await assert.rejects(()=>readNvidiaSSE(responseFromChunks(['x'.repeat(250)]),{maxBytes:200}),/limit/);
 });
+
+test('a streamed answer is never PASS without the provider stop marker', async () => {
+  for (const reason of [null, 'content_filter', 'tool_calls']) {
+    const invalid=events(
+      {choices:[{delta:{content:'Looks like an answer'},finish_reason:reason}]}, '[DONE]');
+    await assert.rejects(() => readNvidiaSSE(responseFromChunks([invalid])), /no successful stop/);
+  }
+});
+
+test('processing preserves lines split in UTF-8 byte chunks', async () => {
+  const text='Le panneau indique ARRÊT.';
+  const wire=events({choices:[{delta:{content:text},finish_reason:null}]},
+    {choices:[{delta:{},finish_reason:'stop'}]},'[DONE]');
+  const bytes=new TextEncoder().encode(wire);
+  const chunks=Array.from(bytes,b=>Uint8Array.of(b));
+  const response={body:new ReadableStream({start(controller){for(const c of chunks)controller.enqueue(c);controller.close();}})};
+  const r=await readNvidiaSSE(response);
+  assert.equal(r.answer,text);
+});
