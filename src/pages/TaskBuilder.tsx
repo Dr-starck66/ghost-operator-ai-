@@ -7,17 +7,20 @@ import { cn } from '../lib/utils';
 export default function TaskBuilder() {
   const [url, setUrl] = useState('');
   const [goal, setGoal] = useState('');
+  const [workflow, setWorkflow] = useState<'site_audit' | 'lead_research' | 'web_research'>('site_audit');
+  const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const navigate = useNavigate();
 
   const handleDeploy = async () => {
     if(!url || !goal) return;
     setIsSubmitting(true);
+    setError('');
     try {
-       const res = await axios.post('/api/tasks', { url, goal });
+       const res = await axios.post('/api/tasks', { url, goal, workflow });
        navigate(`/dashboard/jobs/${res.data.taskId}`);
     } catch (e) {
-       console.error("Failed to deploy task", e);
+       setError(axios.isAxiosError(e) ? (e.response?.data?.error || e.message) : String(e));
        setIsSubmitting(false);
     }
   };
@@ -26,17 +29,28 @@ export default function TaskBuilder() {
     <div className="p-8 max-w-4xl mx-auto h-full text-gray-900">
       <div className="mb-8">
         <h1 className="text-lg font-bold text-gray-900 flex items-center gap-2 tracking-tight">
-          <Cpu className="w-5 h-5 text-blue-600" /> Assemble Agent
+          <Cpu className="w-5 h-5 text-blue-600" /> ASTRA Ω — Missions autonomes
         </h1>
-        <p className="text-gray-500 mt-1 text-sm">Describe the target intelligence you need acquired.</p>
+        <p className="text-gray-500 mt-1 text-sm">Choisissez une mission : collecte HTTP, analyse, qualification et rapport conservé sur le serveur.</p>
       </div>
 
       <div className="space-y-8 glass p-8 rounded-xl shadow-sm border border-gray-200">
         
+        <div className="space-y-3">
+          <label htmlFor="workflow" className="text-xs font-bold text-gray-500 uppercase tracking-wider">Type de mission</label>
+          <select id="workflow" value={workflow} onChange={e => setWorkflow(e.target.value as typeof workflow)}
+            className="w-full border border-gray-300 bg-white rounded px-4 py-3 text-sm">
+            <option value="site_audit">Audit SEO d'un site</option>
+            <option value="lead_research">Recherche et qualification de prospects publics</option>
+            <option value="web_research">Recherche web sourcée</option>
+          </select>
+          <p className="text-xs text-gray-500">Aucune action commerciale ni envoi d'email sans votre accord. Jusqu'à 5 pages pour un audit et 3 prospects vérifiés par mission.</p>
+        </div>
+
         {/* Entry Point */}
         <div className="space-y-3">
           <label className="text-xs font-bold text-gray-500 flex items-center gap-2 uppercase tracking-wider">
-            <LinkIcon className="w-4 h-4" /> Target URL
+            <LinkIcon className="w-4 h-4" /> URL de départ
           </label>
           <input 
             type="url" 
@@ -50,22 +64,23 @@ export default function TaskBuilder() {
         {/* Brain */}
         <div className="space-y-3">
           <label className="text-xs font-bold text-gray-500 flex items-center gap-2 uppercase tracking-wider">
-            <Target className="w-4 h-4" /> Extraction Protocol
+            <Target className="w-4 h-4" /> Objectif de mission
           </label>
           <div className="relative">
             <textarea 
               rows={4}
-              placeholder="e.g. Extract the titles, links, and points for the top 10 articles on the page. Format as an array of JSON objects."
+              placeholder="Ex. : Auditer le référencement de ce site ou rechercher des importateurs de vin d'Occitanie"
               value={goal}
               onChange={e => setGoal(e.target.value)}
               className="w-full bg-white border border-gray-300 rounded p-4 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all text-sm placeholder:text-gray-400 resize-none text-gray-900 shadow-sm"
             />
             <div className="absolute right-3 bottom-3 text-[10px] bg-gray-50 border border-gray-200 px-2 py-1 rounded text-gray-500 font-mono flex items-center gap-1 uppercase font-bold">
-              Natural Language <CornerDownRight className="w-3 h-3"/>
+              Instructions <CornerDownRight className="w-3 h-3"/>
             </div>
           </div>
         </div>
 
+        {error && <p role="alert" className="text-sm text-red-700">Erreur : {error}</p>}
         {/* Deploy */}
         <div className="pt-4 flex justify-end border-t border-gray-200">
           <button 
@@ -79,9 +94,9 @@ export default function TaskBuilder() {
             )}
           >
             {isSubmitting ? (
-              <span className="flex items-center gap-2"><Activity className="w-4 h-4 animate-spin"/> Booting Agent...</span>
+              <span className="flex items-center gap-2"><Activity className="w-4 h-4 animate-spin"/> Lancement...</span>
             ) : (
-              <span className="flex items-center gap-2"><Zap className="w-4 h-4"/> Deploy to Workers</span>
+              <span className="flex items-center gap-2"><Zap className="w-4 h-4"/> Démarrer la mission</span>
             )}
           </button>
         </div>
