@@ -16,8 +16,8 @@ export function validateNemotronInput(raw) {
     const host = url.hostname.toLowerCase();
     if (url.protocol !== 'https:' || url.username || url.password || url.port ||
         !host.includes('.') || host.includes(':') || host === 'localhost' ||
-        /^\\d+(\\.\\d+){3}$/.test(host) ||
-        /\\.(local|internal|localhost|onion|test|invalid|example)$/.test(host)) {
+        /^\d+(\.\d+){3}$/.test(host) ||
+        /\.(local|internal|localhost|onion|test|invalid|example)$/.test(host)) {
       throw new Error('Public HTTPS image URL required');
     }
     imageUrl = url.toString();
