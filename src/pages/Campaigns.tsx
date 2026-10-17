@@ -25,6 +25,9 @@ export default function Campaigns(){
  const [maxCandidates,setMaxCandidates]=useState(10);
  const [contactJson,setContactJson]=useState('[]');
  const [previews,setPreviews]=useState<any[]>([]);
+ const [suppressionEmail,setSuppressionEmail]=useState('');
+ const [eventLeadId,setEventLeadId]=useState('');
+ const [eventType,setEventType]=useState('reply');
  async function refresh(){
    try{const r=await axios.get('/api/prospect/campaigns',{headers:headers()});setData(r.data);setError('');}
    catch(e:any){setError(e.response?.status===401?'Clé privée requise : ouvrez « Build Agent » pour la saisir.':e.response?.data?.error||'Lecture impossible');}
@@ -91,7 +94,18 @@ export default function Campaigns(){
          <button disabled={loading} className="px-3 py-2 border rounded" onClick={()=>submit(()=>post('/api/prospect/campaigns/'+selected+'/approve',{confirmation:'APPROVE_DRAFTS_ONLY'}),'Brouillons approuvés, envoi toujours désactivé :')}>Approuver les brouillons</button>
          <button disabled={loading} className="px-3 py-2 border rounded" onClick={()=>submit(async()=>{const r=await axios.get('/api/prospect/campaigns/'+selected+'/drafts',{headers:headers()});setPreviews(r.data.drafts);return r},'Aperçu :')}>Afficher les brouillons</button>
        </div>
+       <div className="flex flex-wrap gap-2 items-end border rounded p-3">
+         <label className="text-xs">Exclure une adresse partout<input type="email" className="block border p-2 rounded" value={suppressionEmail} onChange={e=>setSuppressionEmail(e.target.value)} placeholder="contact@entreprise.com"/></label>
+         <button disabled={loading||!suppressionEmail} className="border px-3 py-2 rounded text-red-700" onClick={()=>submit(()=>post('/api/prospect/campaigns/'+selected+'/suppress',{email:suppressionEmail}),'Exclusion enregistrée :')}>Exclure et annuler les brouillons</button>
+       </div>
+       {previews.length>0&&<button className="border rounded px-3 py-2 text-sm" onClick={()=>{const blob=new Blob([JSON.stringify({campaign:current,drafts:previews},null,2)],{type:'application/json'});const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download='astra-campaign-review-'+selected+'.json';a.click();URL.revokeObjectURL(u)}}>Exporter les brouillons validables (JSON)</button>}
        {previews.map(d=><div key={d.id} className="p-3 bg-gray-50 border rounded"><b>{d.subject}</b><p>Destinataire : {d.recipient} — {d.status}</p><p>Consentement vérifié : {String(d.consent?.verified)} · Envoi autorisé : non</p><pre className="whitespace-pre-wrap text-xs">{d.body}</pre></div>)}
+       <h3 className="font-semibold">Suivi des réponses et incidents</h3>
+       <div className="flex flex-wrap items-end gap-2 text-sm">
+         <label>Contact<select value={eventLeadId} onChange={e=>setEventLeadId(e.target.value)} className="block border rounded p-2"><option value="">Choisir un contact</option>{contacts.map(c=><option key={c.id} value={c.id}>{c.company} — {c.email}</option>)}</select></label>
+         <label>Événement<select value={eventType} onChange={e=>setEventType(e.target.value)} className="block border rounded p-2">{['reply','qualified','meeting','won','lost','bounce','unsubscribe'].map(t=><option key={t} value={t}>{t}</option>)}</select></label>
+         <button disabled={loading||!eventLeadId} className="px-3 py-2 border rounded" onClick={()=>submit(()=>post('/api/prospect/campaigns/'+selected+'/events',{leadId:eventLeadId,type:eventType}),'Événement conservé ; séquence mise à jour :')}>Enregistrer</button>
+       </div>
        <h3 className="font-semibold">Contacts contrôlés ({contacts.length})</h3>
        <p className="text-gray-600">{contacts.length?contacts.map(c=>c.company+' ('+c.email+')').slice(0,15).join(' · '):'Aucun contact nominatif automatiquement inventé.'}</p>
      </div>}
