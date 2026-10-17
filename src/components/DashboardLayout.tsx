@@ -10,6 +10,7 @@ export default function DashboardLayout() {
     { name: 'Build Agent', path: '/dashboard/build', icon: PlusCircle },
     { name: 'Prospection B2B', path: '/dashboard/campaigns', icon: Activity },
     { name: 'Nemotron NVIDIA', path: '/dashboard/nemotron', icon: Bot },
+    { name: 'Équipe ASTRA Ω', path: '/dashboard/astra-team', icon: Bot },
     { name: 'Settings', path: '/dashboard/settings', icon: Settings },
   ];
 
