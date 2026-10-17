@@ -114,3 +114,25 @@ test('corrupted persistent state is not silently erased', t => {
   assert.throws(() => f.make(), /refusing overwrite/);
   assert.equal(JSON.parse(fs.readFileSync(f.filePath)).version, 999);
 });
+
+test('failed mission recovers without replaying old failed task; failure stays in history', t => {
+  const f = fixture(t), team = f.make();
+  const m = team.create({ ...input, intent: 'research' });
+  team.tick();
+  const first = f.store.list()[0].id;
+  f.store.fail(first); team.tick();
+  assert.equal(team.get(m.id).status, 'failed');
+  const repaired = team.retry(m.id);
+  assert.equal(repaired.restartAttempts, 1);
+  assert.equal(repaired.history[0].status, 'failed');
+  team.tick();
+  assert.equal(f.store.list().length, 2);
+  assert.notEqual(f.store.list()[1].id, first);
+  f.store.complete(f.store.list()[1].id);
+  team.tick(); team.tick();
+  const done = team.get(m.id);
+  assert.equal(done.status, 'completed');
+  assert.equal(done.audit.status, 'PASS');
+  assert.equal(done.audit.retainedFailedAttempts, 2);
+  team.close();
+});
