@@ -50,6 +50,7 @@ export function createAstraTeam({ filePath, taskStore, autoStart = true, tickMs 
     if (m.events.length > 100) m.events.splice(0, m.events.length - 100);
     m.updatedAt = new Date().toISOString();
     save();
+    console.log('ASTRA_TEAM_EVENT ' + JSON.stringify({missionId:m.id,project:m.project,status:m.status,event}));
   }
   function create(input) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw Error('Invalid team mission');
