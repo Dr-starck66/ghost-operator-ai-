@@ -34,3 +34,25 @@ Independent no-key tests: `node --test tests/nemotron-adapter.test.mjs`. Live pr
 Provider: https://build.nvidia.com/nvidia/nemotron-3.5-super-vl-120b-a12b
 
 **Security:** HTML excerpts are untrusted; the prompt asks the model to treat them as data, and model output never drives tools or write actions. Prompt-injection resistance is not guaranteed; no financial, privileged, or irreversible steps are authorized by model output.
+
+
+### NVIDIA Super VL — image, streamed answer and reasoning
+
+This branch also contains an opt-in image smoke test based on the official NVIDIA Build example:
+
+- `nemotron-vision-stream.mjs` composes the visual request (fixed, public NVIDIA traffic-sign image), enables reasoning, handles fragmented SSE events (`reasoning_content` and final `content`) independently and rejects truncated or empty outputs.
+- `nemotron-vision-live.mjs` makes one **manual** NVIDIA hosted call using `NVIDIA_API_KEY` from the server environment and prints only the final answer (not raw reasoning or the key). Never run it automatically on startup or in a cron.
+- `tests/nemotron-vision-stream.test.mjs` checks the multimodal payload and simulated streaming responses, missing API key, errors, empty/truncated results and malformed streams. No vendor credits are used by these tests.
+
+No direct user-provided URL or credential is passed through the visual test: its image is NVIDIA's fixed public documentation fixture.
+
+Local Node.js reproduction:
+```bash
+node --test tests/nemotron-adapter.test.mjs tests/nemotron-vision-stream.test.mjs
+node --check nemotron-vision-stream.mjs
+node --check nemotron-vision-live.mjs
+# Only after securely setting the environment variable AND approving a trial request:
+node nemotron-vision-live.mjs
+```
+
+On 2026-10-17, the 11 local Node.js adapter/vision tests passed with mocked responses. This does **not** verify a live NVIDIA inference, accuracy of the traffic sign, production integration or deployment. The default authenticated Ghost extraction endpoint continues to work without NVIDIA.
