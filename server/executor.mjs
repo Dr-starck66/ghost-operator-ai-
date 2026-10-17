@@ -72,8 +72,11 @@ export async function executeExtraction(task, log) {
   const seen = new Set();
   const pages = [];
   const external = new Set();
+  const externalEvidence = new Map();
+  const errors = [];
+  const maxPages = Number.isSafeInteger(task.maxPages) ? Math.max(1, Math.min(task.maxPages, 5)) : 5;
   let origin = null;
-  while (queue.length && seen.size < 5) {
+  while (queue.length && seen.size < maxPages) {
     const candidate = queue.shift();
     if (seen.has(candidate)) continue;
     seen.add(candidate);
@@ -81,6 +84,12 @@ export async function executeExtraction(task, log) {
       const page = await fetchHtml(candidate);
       if (!origin) origin = new URL(page.url).origin;
       const $ = cheerio.load(page.html);
+      const jsonLdCount = $('script[type="application/ld+json"]').length;
+      const metaDescription = ($('meta[name="description"]').attr('content') || '').trim().slice(0, 500);
+      const canonical = ($('link[rel="canonical"]').attr('href') || '').trim().slice(0, 500);
+      const robots = ($('meta[name="robots"]').attr('content') || '').trim().slice(0, 200);
+      const lang = ($('html').attr('lang') || '').trim().slice(0, 30);
+      const h1Count = $('h1').length;
       $('script,style,svg,noscript,iframe').remove();
       const title = $('title').first().text().trim();
       const headings = $('h1,h2,h3').map((_, el) => $(el).text().trim()).get().filter(Boolean).slice(0, 40);
@@ -92,13 +101,19 @@ export async function executeExtraction(task, log) {
           const absolute = link.href.split('#')[0];
           links.push({ url: absolute, text: $(el).text().trim().slice(0, 180) });
           if (link.origin === origin && !seen.has(absolute) && queue.length < 50) queue.push(absolute);
-          else if (link.origin !== origin) external.add(absolute);
+          else if (link.origin !== origin) {
+            external.add(absolute);
+            if (!externalEvidence.has(absolute)) externalEvidence.set(absolute, { url: absolute, source: page.url, anchor: $(el).text().trim().slice(0, 150) });
+          }
         } catch { /* Ignore anchors, private or unsupported targets. */ }
       });
-      pages.push({ url: page.url, title, headings, text, links: links.slice(0, 300) });
+      pages.push({ url: page.url, title, headings, text, links: links.slice(0, 300),
+        metaDescription, canonical, robots, lang, h1Count, jsonLdCount });
       log('Observed real HTTP page ' + page.url + ', ' + text.length + ' characters');
     } catch (error) {
-      log('HTTP failure for ' + candidate + ': ' + String(error?.message || error));
+      const message = 'HTTP failure for ' + candidate + ': ' + String(error?.message || error);
+      errors.push(message);
+      log(message);
     }
   }
   if (!pages.length) throw new Error('No public page could be fetched: extraction not completed');
@@ -107,7 +122,11 @@ export async function executeExtraction(task, log) {
   const results = linkGoal
     ? [...external].slice(0, 1000).map(url => ({ url, type: 'external-link', source: 'observed-page' }))
     : pages.flatMap(page => page.headings.map(heading => ({ title: heading, source_url: page.url }))).slice(0, 200);
-  const output = { status: 'completed', mode: 'real_http_deterministic', goal: task.goal, pagesVisited: pages.length, uniqueExternalLinks: external.size, results, pages: pages.map(({ url, title, headings }) => ({ url, title, headings })) };
+  const output = { status: 'completed', mode: 'real_http_deterministic', goal: task.goal, pagesVisited: pages.length,
+    uniqueExternalLinks: external.size, results, pages: pages.map(({ url, title, headings }) => ({ url, title, headings })),
+    pageEvidence: pages.map(({ url, title, headings, metaDescription, canonical, robots, lang, h1Count, jsonLdCount }) =>
+      ({ url, title, headings, metaDescription, canonical, robots, lang, h1Count, jsonLdCount })),
+    externalLinks: [...externalEvidence.values()].slice(0, 150), errors };
   if (process.env.GHOST_AI_MODE === 'gemini') {
     if (!process.env.GEMINI_API_KEY) throw new Error('Gemini mode configured but server-side GEMINI_API_KEY is missing');
     const { GoogleGenAI } = await import('@google/genai');
