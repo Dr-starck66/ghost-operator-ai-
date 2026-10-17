@@ -6,8 +6,9 @@ import { createTaskStore } from './server/task-store.mjs';
 import { createProspectBridge } from './server/prospect-bridge.mjs';
 import { validateTarget } from './server/executor.mjs';
 import { executeMission, selectWorkflow } from './server/mission-agent.mjs';
+import { NEMOTRON_MODEL, validateNemotronInput, invokeNemotron } from './server/nemotron.mjs';
 import { recordMission } from './astra/mission-ledger.mjs';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { createHash, randomUUID } from 'node:crypto';
 dotenv.config();
 
@@ -126,6 +127,97 @@ async function runSelftest() {
 }
 app.get('/api/astra/selftest', (_req, res) => res.status(selftest.status === 'fail' ? 503 : 200).json({ status: selftest.status, bootId: selftest.bootId, currentMissionId: selftest.currentMissionId, currentSha256: selftest.currentSha256, previousMissionId: selftest.previousMissionId, previousSha256Verified: selftest.previousSha256Verified, restartPersistenceVerified: selftest.restartPersistenceVerified, missionCount: selftest.missionCount, error: selftest.error }));
 
+
+const nemotronState: any = { status: 'pending', checkedAt: null, httpStatus: null };
+const nemotronCallTimes: number[] = [];
+const nemotronProofFile = path.join(dataDir, 'astra-nemotron-proof.json');
+
+// Keep provider credentials exclusively on the server; expose only a sanitized status.
+app.get('/api/astra/nemotron/status', (_req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({
+    provider: 'NVIDIA', model: NEMOTRON_MODEL,
+    configured: Boolean(process.env.NVIDIA_API_KEY),
+    status: nemotronState.status,
+    checkedAt: nemotronState.checkedAt,
+    httpStatus: nemotronState.httpStatus,
+    proofId: nemotronState.proofId || null,
+    storage: 'persistent_volume'
+  });
+});
+app.post('/api/astra/nemotron', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  if (!process.env.GHOST_ADMIN_TOKEN || req.get('x-ghost-token') !== process.env.GHOST_ADMIN_TOKEN) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  if (!process.env.NVIDIA_API_KEY) return res.status(503).json({ error: 'NVIDIA_NOT_CONFIGURED' });
+  let input;
+  try { input = validateNemotronInput(req.body); }
+  catch (cause: any) { return res.status(400).json({ error: cause.message }); }
+  const now = Date.now();
+  while (nemotronCallTimes.length && now - nemotronCallTimes[0] > 3600000) nemotronCallTimes.shift();
+  if (nemotronCallTimes.length >= 12) return res.status(429).json({ error: 'ASTRA_NVIDIA_HOURLY_GUARD' });
+  nemotronCallTimes.push(now);
+  try {
+    const result = await invokeNemotron(input, { apiKey: process.env.NVIDIA_API_KEY, timeoutMs: 45000 });
+    const entry = await recordMission(path.join(dataDir, 'astra-missions.json'), {
+      id: 'nemotron_' + randomUUID().replaceAll('-', ''),
+      idea: 'ASTRA NVIDIA Nemotron inference',
+      result: { ...result, prompt: input.prompt, imageUrl: input.imageUrl }
+    });
+    return res.status(201).json({
+      status: 'PASS', provider: result.provider, model: result.model, answer: result.answer,
+      modality: result.modality, usage: result.usage, verifiedAt: result.verifiedAt,
+      missionId: entry.id, proofSha256: entry.proofSha256,
+      persisted: true
+    });
+  } catch (cause: any) {
+    const type = String(cause?.code || '');
+    const http = cause?.httpStatus || null;
+    console.error('ASTRA_NEMOTRON_INFERENCE_FAILURE', JSON.stringify({ type, http }));
+    return res.status(type === 'PROVIDER_HTTP' && http === 429 ? 429 : 502)
+      .json({ status: 'FAIL', error: type || 'INFERENCE_OR_STORAGE_FAILURE', upstreamStatus: http });
+  }
+});
+
+async function verifyNemotronOnBoot() {
+  if (!process.env.NVIDIA_API_KEY) {
+    Object.assign(nemotronState, { status: 'unconfigured', checkedAt: null, httpStatus: null });
+    return;
+  }
+  try {
+    const previous = JSON.parse(await readFile(nemotronProofFile, 'utf8'));
+    if (previous.status === 'PASS' && Date.now() - Date.parse(previous.checkedAt) < 7 * 86400000) {
+      Object.assign(nemotronState, previous, { status: 'PASS' });
+      console.log('ASTRA_NEMOTRON_BOOT', JSON.stringify({ status: 'PASS', proof: 'recovered_from_persistent_volume', checkedAt: previous.checkedAt }));
+      return;
+    }
+  } catch (cause: any) {
+    if (cause?.code !== 'ENOENT') console.warn('ASTRA_NEMOTRON_BOOT previous proof unreadable');
+  }
+  try {
+    const test = await invokeNemotron({ prompt: 'Réponds avec une phrase courte confirmant ASTRA NEMOTRON OK.' },
+      { apiKey: process.env.NVIDIA_API_KEY, timeoutMs: 45000 });
+    const entry = await recordMission(path.join(dataDir, 'astra-missions.json'), {
+      id: 'nemotron_boot_' + randomUUID().replaceAll('-', ''),
+      idea: 'ASTRA NVIDIA live remote inference boot evidence',
+      result: { status: 'PASS', provider: test.provider, model: test.model, responseId: test.responseId,
+        answer: test.answer, verifiedAt: test.verifiedAt, usage: test.usage }
+    });
+    const proof = { status: 'PASS', checkedAt: test.verifiedAt, httpStatus: 200, proofId: entry.id };
+    await mkdir(dataDir, { recursive: true });
+    await writeFile(nemotronProofFile + '.tmp', JSON.stringify(proof));
+    const { rename } = await import('node:fs/promises');
+    await rename(nemotronProofFile + '.tmp', nemotronProofFile);
+    Object.assign(nemotronState, proof);
+    console.log('ASTRA_NEMOTRON_BOOT', JSON.stringify({ status: 'PASS', httpStatus: 200, proofId: entry.id }));
+  } catch (cause: any) {
+    Object.assign(nemotronState, { status: 'FAIL', checkedAt: new Date().toISOString(),
+      httpStatus: cause?.httpStatus || null, proofId: null });
+    console.error('ASTRA_NEMOTRON_BOOT', JSON.stringify({ status: 'FAIL', code: String(cause?.code || 'UNVERIFIED'), upstream: cause?.httpStatus || null }));
+  }
+}
+
 app.get('/api/health', (_req, res) => {
   res.json({
     status: 'ok',
@@ -135,7 +227,8 @@ app.get('/api/health', (_req, res) => {
     b2bOutboundEnabled: false,
     tasks: store.status(),
     persistentVolumeConfigured: Boolean(process.env.GHOST_DATA_DIR),
-    aiMode: process.env.GHOST_AI_MODE === 'gemini' ? 'gemini' : 'deterministic'
+    aiMode: process.env.GHOST_AI_MODE === 'gemini' ? 'gemini' : 'deterministic',
+    nemotron: { configured: Boolean(process.env.NVIDIA_API_KEY), status: nemotronState.status }
   });
 });
 
@@ -151,6 +244,7 @@ async function boot() {
   }
   app.listen(PORT, '0.0.0.0', () => {
     console.log('Ghost Operator server worker listening on port ' + PORT);
+    void verifyNemotronOnBoot();
     if (!process.env.GHOST_DATA_DIR) console.warn('GHOST_DATA_DIR not configured: mount a persistent volume for restart-safe hosting');
   });
 }
