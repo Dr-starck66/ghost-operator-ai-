@@ -22,7 +22,7 @@ export function validateTarget(input) {
   try { url = new URL(input); } catch { throw new Error('Invalid URL.'); }
   const host = url.hostname.toLowerCase();
   if (url.protocol !== 'https:' || url.username || url.password || url.port || isIP(host) ||
-      host === 'localhost' || !host.includes('.') ||
+      host === 'localhost' || host.includes(':') || host.endsWith('.') || !host.includes('.') ||
       /\.(localhost|local|internal|test|invalid|example|onion)$/.test(host)) {
     throw new Error('Only public HTTPS domain names without credentials or custom ports are accepted.');
   }
