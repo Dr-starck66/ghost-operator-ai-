@@ -3,7 +3,8 @@ import { createServer as createViteServer } from 'vite';
 import path from 'node:path';
 import dotenv from 'dotenv';
 import { createTaskStore } from './server/task-store.mjs';
-import { executeExtraction, validateTarget } from './server/executor.mjs';
+import { validateTarget } from './server/executor.mjs';
+import { executeMission, selectWorkflow } from './server/mission-agent.mjs';
 import { recordMission } from './astra/mission-ledger.mjs';
 import { readFile } from 'node:fs/promises';
 import { createHash, randomUUID } from 'node:crypto';
@@ -15,7 +16,7 @@ app.use(express.json({ limit: '64kb' }));
 const dataDir = path.resolve(process.env.GHOST_DATA_DIR || './data');
 const store = createTaskStore({
   filePath: path.join(dataDir, 'ghost-tasks.json'),
-  execute: executeExtraction
+  execute: executeMission
 });
 
 // Access protection is mandatory if opting into a potentially metered LLM provider.
@@ -31,8 +32,9 @@ app.use('/api/tasks', (req, res, next) => {
 app.post('/api/tasks', (req, res) => {
   try {
     validateTarget(req.body?.url);
-    const task = store.add(req.body.url, req.body.goal);
-    res.status(202).json({ taskId: task.id, status: task.status });
+    const workflow = selectWorkflow(req.body?.workflow);
+    const task = store.add(req.body.url, req.body.goal, workflow);
+    res.status(202).json({ taskId: task.id, status: task.status, workflow: task.workflow });
   } catch (error: any) {
     res.status(400).json({ error: error?.message || 'Invalid task' });
   }
@@ -106,6 +108,7 @@ app.get('/api/health', (_req, res) => {
   res.json({
     status: 'ok',
     worker: 'server-side',
+    agentWorkflows: ['site_audit', 'lead_research', 'web_research'],
     tasks: store.status(),
     persistentVolumeConfigured: Boolean(process.env.GHOST_DATA_DIR),
     aiMode: process.env.GHOST_AI_MODE === 'gemini' ? 'gemini' : 'deterministic'
