@@ -37,6 +37,11 @@ export function createAstraTeam({ filePath, taskStore, autoStart = true, tickMs 
     if (restored?.version !== 1 || !Array.isArray(restored.missions)) throw Error('Invalid ASTRA team database: refusing overwrite');
     missions = restored.missions;
   }
+  // Read-only recovery diagnostics: report only sanitized outcome codes, never prompts or API keys.
+  const previousAiOutcomes = missions.filter(m => m.ai && ['FAIL', 'UNVERIFIED'].includes(m.ai.status))
+    .slice(-5).map(m => ({ missionId: m.id, status: m.ai.status,
+      reason: String(m.ai.reason || 'unknown').slice(0, 100), at: m.ai.checkedAt || null }));
+  if (previousAiOutcomes.length) console.log('ASTRA_TEAM_AI_PREVIOUS_OUTCOMES ' + JSON.stringify(previousAiOutcomes));
   function save() {
     const tmp = filePath + '.' + process.pid + '.' + randomUUID() + '.tmp';
     try {
@@ -144,8 +149,9 @@ export function createAstraTeam({ filePath, taskStore, autoStart = true, tickMs 
     }).catch(error => {
       if (m.ai?.status !== 'running') return;
       m.ai = { ...m.ai, status: 'FAIL',
-        reason: String(error?.code || 'NVIDIA_INFERENCE_FAILED').slice(0, 80),
+        reason: (String(error?.code || (error?.message === 'INVALID_MODEL_OUTPUT' ? 'INVALID_MODEL_OUTPUT' : 'NVIDIA_INFERENCE_FAILED')) + (Number.isInteger(error?.httpStatus) ? '_' + error.httpStatus : '')).slice(0, 80),
         checkedAt: new Date().toISOString() };
+      console.error('ASTRA_TEAM_AI_DIAG ' + JSON.stringify({ missionId: m.id, code: m.ai.reason }));
       append(m, 'AI FAIL: upstream or persistence error; deterministic evidence preserved');
     });
   }
