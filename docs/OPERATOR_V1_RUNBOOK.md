@@ -46,8 +46,8 @@ Utiliser **HTTPS** devant le service (l'authentification Basic seule n'assure pa
 ## Preuves et statut au 17 octobre 2026
 
 - **SOURCE :** branche `astra/ghost-server-runner-20261017`.
-- **TESTS :** 7/7 tests locaux PASS (5 tests du moteur, 2 tests d'intégration HTTP sur serveur de test avec pages simulées, fermeture de connexion, SIGKILL et redémarrage).
-- **Transpilation isolée de `server.ts` :** 0 diagnostic TypeScript avec l'outil local; ce n'est PAS une compilation complète.
+- **TESTS :** 7/7 tests locaux PASS (5 tests du moteur, 2 tests d'intégration HTTP sur serveur de test avec pages simulées, fermeture de connexion, SIGKILL et redémarrage). Les sources locales étaient des copies de travail ; leur identité octet à octet avec le SHA GitHub n'est pas attestée.
+- **Transpilation isolée de `server.ts` :** 0 diagnostic TypeScript sur une copie locale de `server.ts` non identique octet à octet au SHA GitHub; ce n'est PAS une compilation complète du candidat.
 - **Compilation complète (npm ci / npm run lint / npm run build) et tests Express/Vite réels : UNVERIFIED** faute de dépendances installables dans l'environnement de test sans accès réseau.
 - **Déploiement HTTPS : UNVERIFIED** ; aucun hébergement existant Ghost Operator identifié parmi les projets consultés; Render exige la confirmation du workspace avant la lecture des services.
 - **Autonomie de production 24/7 et durabilité du disque hébergé : UNVERIFIED**.
