@@ -1,157 +1,142 @@
 import express from 'express';
-import { createServer as createViteServer } from 'vite';
-import path from 'path';
+import path from 'node:path';
+import https from 'node:https';
+import dns from 'node:dns';
+import { timingSafeEqual } from 'node:crypto';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import dotenv from 'dotenv';
+import { createStore, extractSite, publicIPv4, validateTarget } from './operator-core.mjs';
+
 dotenv.config();
 
-const app = express();
-const PORT = 3000;
-
-app.use(express.json());
-
-// In-Memory Task Queue Database
-interface Task {
-  id: string;
-  url: string;
-  goal: string;
-  status: 'pending' | 'running' | 'completed' | 'failed';
-  createdAt: number;
-  logs: string[];
-  result?: any;
+const production = process.env.NODE_ENV === 'production';
+const username = process.env.GHOST_OPERATOR_USER || '';
+const password = process.env.GHOST_OPERATOR_PASSWORD || '';
+if (production && (!username || !password)) {
+  throw new Error('Production requires GHOST_OPERATOR_USER and GHOST_OPERATOR_PASSWORD. Refusing unauthenticated public access.');
 }
 
-const tasks: Record<string, Task> = {};
+const app = express();
+app.disable('x-powered-by');
+app.use(express.json({ limit: '12kb' }));
+app.use((req, res, next) => {
+  if (!username || !password) return next(); // For local development only.
+  const header = req.headers.authorization || '';
+  const expected = Buffer.from(username + ':' + password).toString('base64');
+  const supplied = header.startsWith('Basic ') ? header.slice(6) : '';
+  const left = Buffer.from(supplied);
+  const right = Buffer.from(expected);
+  if (left.length === right.length && timingSafeEqual(left, right)) return next();
+  res.setHeader('WWW-Authenticate', 'Basic realm="Ghost Operator"');
+  return res.status(401).json({ error: 'Authentication required.' });
+});
+
+const store = createStore(path.join(process.env.GHOST_OPERATOR_DATA_DIR || path.join(process.cwd(), 'data'), 'tasks.json'));
+store.recover();
+
+// Validate actual DNS addresses at socket connection time. IPv4-only until IPv6 is safely handled.
+const safeAgent = new https.Agent({
+  keepAlive: false,
+  lookup(hostname, options, callback) {
+    dns.lookup(hostname, { family: 4, all: true }, (err, addresses) => {
+      if (err) return callback(err, '', 4);
+      if (!addresses.length || addresses.some(entry => !publicIPv4(entry.address))) {
+        return callback(new Error('Target resolved to a non-public address.'), '', 4);
+      }
+      if (options.all) {
+        callback(null, addresses);
+      } else {
+        callback(null, addresses[0].address, 4);
+      }
+    });
+  },
+});
+
+async function fetchPublicPage(input: string) {
+  const url = validateTarget(input);
+  const response = await axios.get<string>(url, {
+    httpsAgent: safeAgent,
+    proxy: false,
+    maxRedirects: 0,
+    timeout: 12000,
+    maxContentLength: 1_000_000,
+    responseType: 'text',
+    headers: { 'User-Agent': 'GhostOperator/1.0 (bounded public HTML extraction)', Accept: 'text/html' },
+  });
+  const type = String(response.headers['content-type'] || '').toLowerCase();
+  if (!type.includes('text/html')) throw new Error('Only HTML documents are supported.');
+  const $ = cheerio.load(response.data);
+  const links: string[] = [];
+  $('a[href]').slice(0, 500).each((_, element) => {
+    const href = $(element).attr('href');
+    if (href) links.push(href);
+  });
+  const title = $('title').first().text().trim();
+  $('script,style,svg,iframe,noscript').remove();
+  const textContent = $('body').text().replace(/\s+/g, ' ').trim().slice(0, 10_000);
+  return { title, textContent, links };
+}
+
+let busy = false;
+async function processQueue() {
+  if (busy) return;
+  busy = true;
+  try {
+    while (true) {
+      const task = store.list().reverse().find(item => item.status === 'pending');
+      if (!task) break;
+      try {
+        store.patch(task.id, { status: 'running' }, '[START] Server-side extraction started.');
+        const result = await extractSite(task, fetchPublicPage, message => store.patch(task.id, {}, message));
+        store.patch(task.id, { status: 'completed', result }, '[COMPLETE] Evidence saved; goal coverage recorded separately.');
+      } catch (error: any) {
+        store.patch(task.id, { status: 'failed' }, '[ERROR] ' + String(error.message || error).slice(0, 250));
+      }
+    }
+  } finally {
+    busy = false;
+  }
+}
 
 app.post('/api/tasks', (req, res) => {
-  const { url, goal } = req.body;
-  if (!url || !goal) {
-    res.status(400).json({ error: 'URL and goal are required' });
-    return;
+  const { url, goal } = req.body || {};
+  if (typeof goal !== 'string' || !goal.trim() || goal.length > 1000) {
+    return res.status(400).json({ error: 'A goal of up to 1000 characters is required.' });
   }
-
-  const taskId = `task_${Math.random().toString(36).substring(2, 9)}`;
-  tasks[taskId] = {
-    id: taskId,
-    url,
-    goal,
-    status: 'pending',
-    createdAt: Date.now(),
-    logs: ['Task registered.'],
-  };
-
-  res.json({ taskId, status: 'pending' });
-});
-
-app.get('/api/tasks/:id', (req, res) => {
-  const task = tasks[req.params.id];
-  if (!task) {
-    res.status(404).json({ error: 'Task not found' });
-    return;
-  }
-  res.json(task);
-});
-
-app.get('/api/tasks', (req, res) => {
-  const allTasks = Object.values(tasks).sort((a, b) => b.createdAt - a.createdAt);
-  res.json(allTasks);
-});
-
-app.put('/api/tasks/:id', (req, res) => {
-  const task = tasks[req.params.id];
-  if (!task) {
-    res.status(404).json({ error: 'Task not found' });
-    return;
-  }
-  const { status, result, logMessage } = req.body;
-  
-  if (status) task.status = status;
-  if (result) task.result = result;
-  if (logMessage) {
-    task.logs.push(`${new Date().toISOString()} - ${logMessage}`);
-  }
-  
-  res.json(task);
-});
-
-app.post('/api/scrape', async (req, res) => {
-  const { url } = req.body;
-  if (!url) {
-    res.status(400).json({ error: 'URL is required' });
-    return;
-  }
-  
   try {
-    const response = await axios.get(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-      },
-      timeout: 10000,
-    });
-
-    const html = response.data;
-    const $ = cheerio.load(html);
-    
-    // Extract links before removing elements
-    const links: string[] = [];
-    $('a').each((_, el) => {
-      let href = $(el).attr('href');
-      if (href && !href.startsWith('javascript:') && !href.startsWith('#') && !href.startsWith('mailto:')) {
-         try {
-           const absoluteUrl = new URL(href, url).href;
-           links.push(absoluteUrl);
-         } catch (e) {
-           // ignore invalid URLs
-         }
-      }
-    });
-
-    // Clean up HTML to reduce token usage
-    $('script, style, link, img, svg, iframe, noscript').remove();
-    
-    // Inject hrefs into the text content so the LLM can see the actual URLs
-    $('a').each((_, el) => {
-      const href = $(el).attr('href');
-      if (href && !href.startsWith('javascript:') && !href.startsWith('#') && !href.startsWith('mailto:')) {
-         try {
-           const absoluteUrl = new URL(href, url).href;
-           $(el).append(` [URL: ${absoluteUrl}] `);
-         } catch (e) {}
-      }
-    });
-
-    let textContent = $('body').text().replace(/\s+/g, ' ').trim();
-    
-    // Truncate to avoid massive payloads
-    if (textContent.length > 50000) {
-      textContent = textContent.substring(0, 50000) + '... (truncated)';
-    }
-    
-    res.json({ textContent, links: [...new Set(links)] });
+    const task = store.add(url, goal.trim());
+    void processQueue(); // No browser tab or paid scheduler required.
+    return res.status(202).json({ taskId: task.id, status: 'pending' });
   } catch (error: any) {
-    res.status(500).json({ error: error.message || String(error) });
+    return res.status(400).json({ error: String(error.message || error) });
   }
 });
+
+app.get('/api/tasks', (_req, res) => res.json(store.list()));
+app.get('/api/tasks/:id', (req, res) => {
+  const task = store.get(req.params.id);
+  return task ? res.json(task) : res.status(404).json({ error: 'Task not found.' });
+});
+// Intentionally no arbitrary-URL /api/scrape or client-controlled status override.
+app.get('/api/health', (_req, res) => res.json({ service: 'ghost-operator', status: 'ready', autonomous_queue: true, paid_ai_calls: false }));
 
 async function startServerInner() {
-  if (process.env.NODE_ENV !== 'production') {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
+  if (!production) {
+    const { createServer: createViteServer } = await import('vite');
+    const vite = await createViteServer({ server: { middlewareMode: true }, appType: 'spa' });
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
+    app.get('*', (_req, res) => res.sendFile(path.join(distPath, 'index.html')));
   }
-
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Ghost Operator AI Runtime listening on http://localhost:${PORT}`);
+  const port = Number(process.env.PORT || 3000);
+  const host = process.env.HOST || (production ? '0.0.0.0' : '127.0.0.1');
+  app.listen(port, host, () => {
+    console.log('Ghost Operator listening on ' + host + ':' + port + ' (durable server queue).');
+    void processQueue(); // Recovery of tasks interrupted by a restart.
   });
 }
 
-startServerInner();
+startServerInner().catch(error => { console.error(error); process.exitCode = 1; });

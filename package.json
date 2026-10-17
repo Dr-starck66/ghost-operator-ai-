@@ -5,11 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --outfile=dist/server.cjs --external:express --external:vite --external:cheerio --external:axios --external:dotenv --external:@google/genai",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --packages=external --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
     "preview": "vite preview",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "node --test tests/*.test.mjs",
+    "test:e2e": "npm run build && node --test tests/server-real.e2e.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",

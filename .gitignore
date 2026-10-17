@@ -6,3 +6,6 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Ghost Operator local persistent task history
+data/

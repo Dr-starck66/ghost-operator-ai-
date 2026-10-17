@@ -28,7 +28,7 @@ export default function TaskBuilder() {
         <h1 className="text-lg font-bold text-gray-900 flex items-center gap-2 tracking-tight">
           <Cpu className="w-5 h-5 text-blue-600" /> Assemble Agent
         </h1>
-        <p className="text-gray-500 mt-1 text-sm">Describe the target intelligence you need acquired.</p>
+        <p className="text-gray-500 mt-1 text-sm">Extract public website metadata without a paid AI API. The server runs the job even when this page is closed.</p>
       </div>
 
       <div className="space-y-8 glass p-8 rounded-xl shadow-sm border border-gray-200">
@@ -55,7 +55,7 @@ export default function TaskBuilder() {
           <div className="relative">
             <textarea 
               rows={4}
-              placeholder="e.g. Extract the titles, links, and points for the top 10 articles on the page. Format as an array of JSON objects."
+              placeholder="e.g. Extract all external links and page titles from this public website."
               value={goal}
               onChange={e => setGoal(e.target.value)}
               className="w-full bg-white border border-gray-300 rounded p-4 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all text-sm placeholder:text-gray-400 resize-none text-gray-900 shadow-sm"
@@ -79,9 +79,9 @@ export default function TaskBuilder() {
             )}
           >
             {isSubmitting ? (
-              <span className="flex items-center gap-2"><Activity className="w-4 h-4 animate-spin"/> Booting Agent...</span>
+              <span className="flex items-center gap-2"><Activity className="w-4 h-4 animate-spin"/> Creating Job...</span>
             ) : (
-              <span className="flex items-center gap-2"><Zap className="w-4 h-4"/> Deploy to Workers</span>
+              <span className="flex items-center gap-2"><Zap className="w-4 h-4"/> Start Extraction</span>
             )}
           </button>
         </div>

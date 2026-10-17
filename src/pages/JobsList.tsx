@@ -47,7 +47,7 @@ export default function JobsList() {
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-            <Database className="w-5 h-5 text-blue-600" /> Active Deployments
+            <Database className="w-5 h-5 text-blue-600" /> Extraction Jobs
           </h1>
           <p className="text-gray-500 mt-1 text-sm">Monitor running tasks and extracted data intelligence.</p>
         </div>
@@ -55,7 +55,7 @@ export default function JobsList() {
           to="/dashboard/build" 
           className="px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded hover:bg-blue-700 transition-colors"
         >
-          New Deployment
+          New Extraction
         </Link>
       </div>
 
@@ -65,8 +65,8 @@ export default function JobsList() {
         ) : tasks.length === 0 ? (
            <div className="p-16 text-center">
              <Globe className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-             <p className="text-gray-500 mb-4 text-sm mono">No agents currently deployed.</p>
-             <Link to="/dashboard/build" className="text-blue-600 font-medium hover:underline text-sm">Deploy an agent &rarr;</Link>
+             <p className="text-gray-500 mb-4 text-sm mono">No extraction jobs yet.</p>
+             <Link to="/dashboard/build" className="text-blue-600 font-medium hover:underline text-sm">Start an extraction &rarr;</Link>
            </div>
         ) : (
           <table className="w-full text-left border-collapse">
