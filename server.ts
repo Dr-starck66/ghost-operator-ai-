@@ -44,7 +44,11 @@ const safeAgent = new https.Agent({
       if (!addresses.length || addresses.some(entry => !publicIPv4(entry.address))) {
         return callback(new Error('Target resolved to a non-public address.'), '', 4);
       }
-      callback(null, addresses[0].address, 4);
+      if (options.all) {
+        callback(null, addresses);
+      } else {
+        callback(null, addresses[0].address, 4);
+      }
     });
   },
 });
