@@ -4,7 +4,7 @@ import { Network, Play, RefreshCw, ShieldCheck } from 'lucide-react';
 
 type Role = { id: string; role: string; capability: string; enabled: boolean };
 type Step = { role: string; status: string; taskId: string; pagesVisited: number; evidenceSha256: string; unverified: number | null; totalIssues: number | null };
-type Mission = { id: string; project: string; intent: string; status: string; createdAt: string; plan: string[]; steps: Step[]; taskId: string | null; audit?: { status: string; proofSha256?: string; reason?: string } };
+type Mission = { id: string; project: string; intent: string; status: string; createdAt: string; plan: string[]; steps: Step[]; taskId: string | null; audit?: { status: string; proofSha256?: string; reason?: string }; ai?: { status: string; answer?: string; answerSha256?: string; reason?: string; model?: string; checkedAt?: string; qualification?: string } };
 const presets = [
   { project: 'wine_else', url: 'https://else.wine/', goal: 'Auditer les pages consacrées aux vins d’Occitanie' },
   { project: 'betgpt', url: 'https://betgpt.live/', goal: 'Audit SEO de la page publique et des liens' },
@@ -56,7 +56,7 @@ export default function AstraTeam() {
   return <div className="p-8 max-w-5xl mx-auto text-gray-900 space-y-6">
     <header>
       <h1 className="font-bold text-xl flex gap-2 items-center"><Network className="text-blue-600" /> ASTRA MULTI-AGENTS Ω</h1>
-      <p className="text-sm text-gray-600">Notre équipe privée sur Ghost Operator : missions séquentielles, preuves, reprise après redémarrage. Aucun envoi, aucune publication, aucun achat automatique.</p>
+      <p className="text-sm text-gray-600">Équipe privée ASTRA : recherche et audit HTML reproductible, puis synthèse NVIDIA Nemotron distincte (au maximum 3 appels IA par jour). Aucun envoi, aucune publication, aucun achat automatique.</p>
     </header>
     <section className="bg-white border rounded-xl p-5 space-y-4">
       <label className="block text-sm font-semibold">Jeton administrateur Ghost Operator
@@ -118,7 +118,14 @@ export default function AstraTeam() {
         {m.audit && <p className={m.audit.status === 'PASS' ? 'text-green-700' : 'text-red-700'}>
           Auditeur : {m.audit.status} {m.audit.reason || ''} · {m.audit.proofSha256 || ''}
         </p>}
-        {m.taskId && <p className="text-xs text-blue-700">Tâche en cours : {m.taskId}</p>}
+        {m.ai && m.ai.status !== 'disabled' && <div className="bg-blue-50 border border-blue-200 rounded p-3 space-y-2">
+          <h3 className="font-semibold">ASTRA NEMOTRON — Analyse IA : {m.ai.status}</h3>
+          <p className="text-xs text-gray-600">Synthèse du modèle distincte des preuves HTTP auditées. Une analyse IA ne valide pas à elle seule un résultat métier.</p>
+          {m.ai.answer && <p className="whitespace-pre-wrap break-words">{m.ai.answer}</p>}
+          {m.ai.reason && <p className="text-xs text-red-700">{m.ai.reason}</p>}
+          {m.ai.answerSha256 && <p className="font-mono text-xs break-all">Empreinte SHA-256 de la synthèse : {m.ai.answerSha256}</p>}
+        </div>}
+        {m.taskId && <p className="text-xs text-blue-700">Tâche en cours : {m.taskId}</p>
       </article>)}
     </section>
   </div>;
