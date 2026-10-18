@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { crawlWithAstra } from './astra-crawl-fallback.mjs';
 import { canUsePaidInference } from './astra-conway-policy.mjs';
 import * as cheerio from 'cheerio';
 import dns from 'node:dns';
@@ -117,7 +118,15 @@ export async function executeExtraction(task, log) {
       log(message);
     }
   }
-  if (!pages.length) throw new Error('No public page could be fetched: extraction not completed');
+  if (!pages.length) {
+    // Never bypass the local extractor's private-DNS and unsafe target rejection.
+    if (errors.some(message => /private|unsafe DNS|only standard HTTP|unsafe target/i.test(message)))
+      throw new Error('Unsafe or private target refused; ASTRA fallback not permitted');
+    if (process.env.ASTRA_CRAWLER_ENABLED === '0')
+      throw new Error('No public page could be fetched: ASTRA fallback disabled');
+    log('Primary extraction returned zero verified pages; trying ASTRA CRAWLER OMEGA');
+    return await crawlWithAstra(task, log);
+  }
   const goal = task.goal.toLowerCase();
   const linkGoal = /links?|liens?|affiliat|url/i.test(goal);
   const results = linkGoal
