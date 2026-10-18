@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import { createTaskStore } from './server/task-store.mjs';
 import { createProspectBridge } from './server/prospect-bridge.mjs';
 import { createAstraTeam } from './server/astra-team.mjs';
+import { createOsintService } from './server/astra-osint.mjs';
 import { validateTarget } from './server/executor.mjs';
 import { executeMission, selectWorkflow } from './server/mission-agent.mjs';
 import { NEMOTRON_MODEL, validateNemotronInput, invokeNemotron } from './server/nemotron.mjs';
@@ -34,6 +35,36 @@ async function synthesizeAstraEvidence({ mission, evidence, evidenceProofSha256 
   return invokeNemotron({ prompt: trustedInstructions + '\nDonnées HTTP auditées :\n' + context },
     { apiKey: process.env.NVIDIA_API_KEY, timeoutMs: 45000 });
 }
+
+// ASTRA OSINT Ω: authenticated passive research and public DNS checks only.
+const astraOsint = createOsintService();
+app.use('/api/astra/osint', (req, res, next) => {
+  if (!process.env.GHOST_ADMIN_TOKEN || req.get('x-ghost-token') !== process.env.GHOST_ADMIN_TOKEN)
+    return res.status(401).json({ error: 'Unauthorized' });
+  res.set('Cache-Control', 'no-store');
+  next();
+});
+app.get('/api/astra/osint/status', (_req, res) => res.json(astraOsint.status()));
+app.get('/api/astra/osint/catalog', async (req, res) => {
+  try {
+    const query = typeof req.query.q === 'string' ? req.query.q : '';
+    const category = typeof req.query.category === 'string' ? req.query.category : 'domain';
+    const limit = req.query.limit == null ? 15 : Number(req.query.limit);
+    return res.json(await astraOsint.catalog({ query, category, limit }));
+  } catch (e: any) {
+    const message = String(e?.message || 'CATALOG_UNAVAILABLE').slice(0, 150);
+    return res.status(/^INVALID_/.test(message) ? 400 : 503).json({ error: message, status: 'UNVERIFIED' });
+  }
+});
+app.post('/api/astra/osint/domain', async (req, res) => {
+  try { return res.json(await astraOsint.domainReport(req.body?.domain)); }
+  catch (e: any) {
+    const message = String(e?.message || 'DNS_UNAVAILABLE').slice(0, 150);
+    return res.status(/^(INVALID_|NON_PUBLIC_)/.test(message) ? 400 : 503)
+      .json({ error: message, status: 'UNVERIFIED' });
+  }
+});
+
 const astraTeam = createAstraTeam({
   filePath: path.join(dataDir, 'astra-team.json'), taskStore: store,
   aiAnalyze: process.env.NVIDIA_API_KEY ? synthesizeAstraEvidence : null,
