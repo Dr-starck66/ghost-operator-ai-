@@ -6,6 +6,7 @@ import { createTaskStore } from './server/task-store.mjs';
 import { createProspectBridge } from './server/prospect-bridge.mjs';
 import { createAstraTeam } from './server/astra-team.mjs';
 import { createOsintService } from './server/astra-osint.mjs';
+import { verifyOsintHttp, sealOsintProof } from './server/astra-osint-livecheck.mjs';
 import { validateTarget } from './server/executor.mjs';
 import { executeMission, selectWorkflow } from './server/mission-agent.mjs';
 import { NEMOTRON_MODEL, validateNemotronInput, invokeNemotron } from './server/nemotron.mjs';
@@ -45,6 +46,35 @@ app.use('/api/astra/osint', (req, res, next) => {
   next();
 });
 app.get('/api/astra/osint/status', (_req, res) => res.json(astraOsint.status()));
+
+const osintHttpProof: any = { status: 'pending', checkedAt: null, proofSha256: null, persisted: false };
+app.get('/api/astra/osint/verification', (_req, res) => res.json(osintHttpProof));
+
+async function runOsintLiveProof() {
+  try {
+    // Loopback calls pass through real Express authentication, validation and handlers.
+    // Token never enters the proof, a URL, the filesystem, or any outbound request.
+    const checked = await verifyOsintHttp({
+      baseUrl: 'http://127.0.0.1:' + PORT, token: process.env.GHOST_ADMIN_TOKEN
+    });
+    const proof = sealOsintProof(checked);
+    const filepath = path.join(dataDir, 'astra-osint-http-proof.json');
+    await mkdir(dataDir, { recursive: true });
+    const tmp = filepath + '.' + process.pid + '.tmp';
+    await writeFile(tmp, JSON.stringify(proof), { mode: 0o600 });
+    const { rename } = await import('node:fs/promises');
+    await rename(tmp, filepath);
+    Object.assign(osintHttpProof, proof, { persisted: true });
+    console.log('ASTRA_OSINT_HTTP_E2E ' + JSON.stringify(osintHttpProof));
+  } catch (error: any) {
+    Object.assign(osintHttpProof, { status: 'FAIL', checkedAt: new Date().toISOString(),
+      reason: String(error?.code || error?.name || 'PROOF_STORAGE_FAILED').slice(0,80),
+      persisted: false });
+    console.error('ASTRA_OSINT_HTTP_E2E ' + JSON.stringify(osintHttpProof));
+  }
+}
+
+
 app.get('/api/astra/osint/catalog', async (req, res) => {
   try {
     const query = typeof req.query.q === 'string' ? req.query.q : '';
@@ -302,7 +332,11 @@ app.get('/api/health', (_req, res) => {
     tasks: store.status(),
     persistentVolumeConfigured: Boolean(process.env.GHOST_DATA_DIR),
     aiMode: process.env.GHOST_AI_MODE === 'gemini' ? 'gemini' : 'deterministic',
-    nemotron: { configured: Boolean(process.env.NVIDIA_API_KEY), status: nemotronState.status }
+    nemotron: { configured: Boolean(process.env.NVIDIA_API_KEY), status: nemotronState.status },
+    osint: { status: osintHttpProof.status, checkedAt: osintHttpProof.checkedAt,
+      proofSha256: osintHttpProof.proofSha256, persisted: osintHttpProof.persisted,
+      httpVerified: osintHttpProof.httpVerified, dnsObserved: osintHttpProof.externalDnsObserved,
+      catalogVerified: osintHttpProof.upstreamCatalogVerified }
   });
 });
 
@@ -318,6 +352,7 @@ async function boot() {
   }
   app.listen(PORT, '0.0.0.0', () => {
     console.log('Ghost Operator server worker listening on port ' + PORT);
+    void runOsintLiveProof();
     void verifyNemotronOnBoot();
     // One deduplicated, evidence-first mission proves the model is actually used by the team.
     // The coordinator stores its task and SHA in /data; it does not send or publish anything.
