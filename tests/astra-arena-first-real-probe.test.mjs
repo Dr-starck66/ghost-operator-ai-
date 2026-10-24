@@ -1,0 +1,15 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import os from 'node:os';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import {createHash} from 'node:crypto';
+import {firstRealArenaProbe, PROMPT, MODEL, PROBE_FILENAME} from '../server/astra-arena-first-real-probe.mjs';
+const sha=v=>createHash('sha256').update(v).digest('hex');
+async function isolated(fn) {const dir=await fs.mkdtemp(path.join(os.tmpdir(),'astra-ghost-probe-')); try{await fn(dir)}finally{await fs.rm(dir,{recursive:true,force:true})}}
+const body={status:'PASS',model:MODEL,answer:'import json,sys\nfor line in sys.stdin:\n v=json.loads(line)["values"]\n print(json.dumps({"even_sum":sum(x for x in v if type(x)==int and x%2==0)}))\n',proofSha256:'a'.repeat(64),missionId:'nemotron_a83e1b',usage:{promptTokens:1,completionTokens:10}};
+test('disabled: no provider call', async()=>{await isolated(async dir=>{let calls=0;const r=await firstRealArenaProbe({dataDir:dir,port:8080,token:'fake',configured:true,freePrototypeEnabled:false,transport:async()=>{calls++}});assert.equal(r.status,'SKIPPED');assert.equal(calls,0)})});
+test('missing credentials: no provider call', async()=>{await isolated(async dir=>{let calls=0;const r=await firstRealArenaProbe({dataDir:dir,port:8080,configured:true,freePrototypeEnabled:true,transport:async()=>{calls++}});assert.equal(r.status,'UNVERIFIED');assert.equal(calls,0)})});
+test('one successful call, persisted receipt and reuse never retries', async()=>{await isolated(async dir=>{let calls=0;const opts={dataDir:dir,port:8080,token:'fake',configured:true,freePrototypeEnabled:true,log:()=>{},transport:async x=>{calls++;assert.equal(x.prompt,PROMPT);return body}};const r=await firstRealArenaProbe(opts);assert.equal(r.status,'PASS');const disk=JSON.parse(await fs.readFile(path.join(dir,PROBE_FILENAME),'utf8'));assert.equal(disk.responseSha256,sha(body.answer));assert.equal(Buffer.from(disk.responseUtf8Base64,'base64').toString(),body.answer);const other=await firstRealArenaProbe(opts);assert.equal(other.status,'SKIPPED');assert.equal(calls,1)})});
+test('provider error: preserved failure, no retry', async()=>{await isolated(async dir=>{let calls=0;const opts={dataDir:dir,port:8080,token:'fake',configured:true,freePrototypeEnabled:true,log:()=>{},transport:async()=>{calls++;throw Error('GHOST_HTTP_429')}};assert.equal((await firstRealArenaProbe(opts)).status,'FAIL');assert.equal((await firstRealArenaProbe(opts)).status,'SKIPPED');assert.equal(calls,1)})});
+test('reject corrupt receipts',async()=>{await isolated(async dir=>{const opts={dataDir:dir,port:8080,token:'fake',configured:true,freePrototypeEnabled:true,log:()=>{},transport:async()=>({...body,proofSha256:'nope'})}; const r=await firstRealArenaProbe(opts);assert.equal(r.status,'FAIL')})});
