@@ -10,6 +10,7 @@ import { verifyOsintHttp, sealOsintProof } from './server/astra-osint-livecheck.
 import { validateTarget } from './server/executor.mjs';
 import { executeMission, selectWorkflow } from './server/mission-agent.mjs';
 import { NEMOTRON_MODEL, validateNemotronInput, invokeNemotron } from './server/nemotron.mjs';
+import { firstRealArenaProbe } from './server/astra-arena-first-real-probe.mjs';
 import { recordMission } from './astra/mission-ledger.mjs';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { createHash, randomUUID } from 'node:crypto';
@@ -354,6 +355,22 @@ async function boot() {
     console.log('Ghost Operator server worker listening on port ' + PORT);
     void runOsintLiveProof();
     void verifyNemotronOnBoot();
+    // One-shot free-prototype evaluation. Disabled by default.
+    // Uses the EXISTING authenticated Ghost API inside this very Railway service.
+    // NEVER executes generated code on the production worker.
+    if (process.env.ASTRA_ARENA_FREE_PROTOTYPE_ONESHOT === '1') {
+      void firstRealArenaProbe({
+        dataDir, port: PORT, token: process.env.GHOST_ADMIN_TOKEN,
+        configured: Boolean(process.env.NVIDIA_API_KEY),
+        freePrototypeEnabled: true
+      }).then(result => {
+        console.log('ASTRA_ARENA_FIRST_REAL_STATUS ' + JSON.stringify({
+          status: result.status, reason: result.reason || null,
+          taskId: 'ASTRA-ARENA-NEMOTRON-PROTOTYPE-20261024-V1'
+        }));
+      }).catch(() => console.error('ASTRA_ARENA_FIRST_REAL_SETUP_FAIL'));
+    }
+
     // One deduplicated, evidence-first mission proves the model is actually used by the team.
     // The coordinator stores its task and SHA in /data; it does not send or publish anything.
     if (process.env.ASTRA_NEMOTRON_TEAM_BOOTSTRAP !== '0') {
