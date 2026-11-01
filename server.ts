@@ -12,6 +12,8 @@ import { executeMission, selectWorkflow } from './server/mission-agent.mjs';
 import { NEMOTRON_MODEL, validateNemotronInput, invokeNemotron } from './server/nemotron.mjs';
 import { firstRealArenaProbe } from './server/astra-arena-first-real-probe.mjs';
 import { recordMission } from './astra/mission-ledger.mjs';
+import { buildCivicBrief } from './astra/civic-watch.mjs';
+import { createCivicMonitor, renderMonitorDashboard } from './server/astra-civic-monitor.mjs';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { createHash, randomUUID } from 'node:crypto';
 dotenv.config();
@@ -20,6 +22,12 @@ const app = express();
 const PORT = Number(process.env.PORT || 3000);
 app.use(express.json({ limit: '64kb' }));
 const dataDir = path.resolve(process.env.GHOST_DATA_DIR || './data');
+// Reuse the EXISTING Ghost process and existing durable data directory: no new service or paid API.
+// Two bounded institutional-publication index requests per successful calendar day.
+const civicMonitor = createCivicMonitor({
+  filePath: path.join(dataDir, 'astra-civic-sources.json'),
+  autoStart: process.env.ASTRA_CIVIC_AUTO_ENABLED !== 'false'
+});
 const store = createTaskStore({
   filePath: path.join(dataDir, 'ghost-tasks.json'),
   execute: executeMission
@@ -94,6 +102,41 @@ app.post('/api/astra/osint/domain', async (req, res) => {
     return res.status(/^(INVALID_|NON_PUBLIC_)/.test(message) ? 400 : 503)
       .json({ error: message, status: 'UNVERIFIED' });
   }
+});
+
+// All observatory routes are private. No suspect lists, user submissions or outbound messages.
+app.use('/api/astra/civic', (req, res, next) => {
+  if (!process.env.GHOST_ADMIN_TOKEN || req.get('x-ghost-token') !== process.env.GHOST_ADMIN_TOKEN)
+    return res.status(401).json({ error: 'Unauthorized' });
+  res.set('Cache-Control', 'no-store');
+  next();
+});
+app.get('/api/astra/civic/status', async (_req, res) => {
+  try {
+    const report = await civicMonitor.report();
+    return res.json({ status: report.lastScan?.status || 'UNVERIFIED',
+      checkedAt: report.lastScan?.checkedAt || null, records: report.entries.length,
+      sourceChecks: report.lastScan?.checks || [], proofSha256: report.reportSha256,
+      scope: 'official_public_metadata_only' });
+  } catch (e) { return res.status(503).json({ status:'FAIL', error: String(e?.message || 'MONITOR_ERROR').slice(0,80) }); }
+});
+app.get('/api/astra/civic/report', async (_req,res) => {
+  try { return res.json(await civicMonitor.report()); }
+  catch (e) { return res.status(503).json({ status:'FAIL', error:String(e?.message||'MONITOR_ERROR').slice(0,80) }); }
+});
+app.get('/api/astra/civic/dashboard', async (_req,res) => {
+  try {
+    res.set('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'");
+    return res.type('html').send(renderMonitorDashboard(await civicMonitor.report()));
+  } catch (e) { return res.status(503).send('CIVIC_WATCH_UNAVAILABLE'); }
+});
+app.get('/api/astra/civic/claims', async (_req,res) => {
+  try { return res.json(await buildCivicBrief(path.join(dataDir, 'astra-civic-claims.json'))); }
+  catch (e) { return res.status(503).json({ status:'FAIL', error:String(e?.message||'CLAIMS_UNAVAILABLE').slice(0,80) }); }
+});
+app.post('/api/astra/civic/scan', async (req,res) => {
+  try { return res.json(await civicMonitor.scan({force:req.body?.force === true})); }
+  catch (e) { return res.status(503).json({ status:'FAIL', error:String(e?.message||'MONITOR_ERROR').slice(0,80) }); }
 });
 
 const astraTeam = createAstraTeam({
