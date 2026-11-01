@@ -7,7 +7,7 @@
 
 ## Sources officielles (consultées via pages publiques le 1er novembre 2026)
 1. Gendinfo, rubrique « Criminalité organisée et enquêtes » : https://www.gendarmerie.interieur.gouv.fr/gendinfo/criminalite-organisee-et-enquetes
-2. Flux RSS indiqué sur la page : https://www.gendarmerie.interieur.gouv.fr/gendinfo/rss/9102 — **contenu RSS non testé depuis l'environnement local**.
+2. Flux RSS indiqué sur la page : https://www.gendarmerie.interieur.gouv.fr/gendinfo/rss/55328 — **adresse RSS découverte dans le lien officiel du site ; réponse XML distante non testée en Node**.
 3. Ministère de la Justice, espace presse : https://www.justice.gouv.fr/espace-presse
 
 Le contenu lui-même **n'est pas certifié** par la collecte. Les publications restent des informations attribuées.
@@ -42,3 +42,8 @@ N'ajouter ni service d'hébergement ni cron autonome. Une exécution Node locale
 - L'environnement de test actuel ne résout pas les noms des sites institutionnels ; le live fetch et sa répétition serveur ne sont **pas vérifiés**.
 - Les modifications sont dans la branche isolée `astra/civic-watch-zero-cost-20261101`. Aucune fusion automatique de la PR, aucun DNS modifié et aucun coût engagé.
 - Pour déclarer production opérationnelle : valider la PR, le serveur Ghost existant et son volume durable, vérifier HTTP 401 sans jeton, exécuter un cycle et lire les deux preuves source réellement téléchargées, contrôler le lendemain sans doublon.
+
+## Version accessible mise en service le 1er novembre 2026
+- Interface publique (documents institutionnels uniquement) : https://astra-civic-watch-bxuud6.v2.appdeploy.ai/
+- AppDeploy free : projet distinct sur compte déjà actif, application prête, cron interne quotidien 09:15 Europe/Paris. Ceci ne démontre pas encore une collecte réseau réussie ; vérifier le premier passage.
+- Cette branche Ghost reste en brouillon, sans fusion ni frais Railway.
