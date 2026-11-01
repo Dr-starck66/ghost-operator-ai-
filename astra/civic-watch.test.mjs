@@ -1,0 +1,17 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,readFile,writeFile} from 'node:fs/promises';
+import {join} from 'node:path';
+import {tmpdir} from 'node:os';
+import {normalizePublicObservation,recordPublicObservation,buildCivicBrief,renderCivicHtml} from './civic-watch.mjs';
+const url='https://www.gendarmerie.interieur.gouv.fr/gendinfo/criminalite-organisee-et-enquetes/2026/operation-octopus-nouveau-coup-de-filet-contre-la-dz-mafia';
+const fact=(value=42)=>({eventId:'operation-octopus-2026',eventDate:'2026-03-09',title:'Opération Octopus',sourceUrl:url,sourceDate:'2026-03-14',sourceSegment:'bilan public',metric:'interpellations',value});
+const file=async()=>join(await mkdtemp(join(tmpdir(),'cw-')),'ledger.json');
+test('normalizes institutional aggregate',()=>assert.equal(normalizePublicObservation(fact()).value,42));
+test('rejects non institutional and insecure URL',()=>{for(const u of ['https://evil.example.com/','http://www.gendarmerie.interieur.gouv.fr/a','https://a@www.gendarmerie.interieur.gouv.fr/a'])assert.throws(()=>normalizePublicObservation({...fact(),sourceUrl:u}));});
+test('rejects identity, precise location, extras',()=>{for(const key of ['name','suspect','address','phone','coordinates','photo','vehicle'])assert.throws(()=>normalizePublicObservation({...fact(),[key]:'data'}));});
+test('rejects unsafe fields',()=>{assert.throws(()=>normalizePublicObservation({...fact(),title:'<script>'}));assert.throws(()=>normalizePublicObservation({...fact(),value:-1}));assert.throws(()=>normalizePublicObservation({...fact(),eventDate:'2026-02-30'}));});
+test('persists proof with existing ledger and refuses duplicates',async()=>{const p=await file();await recordPublicObservation(p,fact());const l=JSON.parse(await readFile(p,'utf8'));assert.match(l.missions[0].proofSha256,/^[a-f0-9]{64}$/);await assert.rejects(recordPublicObservation(p,fact()));});
+test('explicitly preserves contradictory official counts',async()=>{const p=await file();await recordPublicObservation(p,fact(42));await recordPublicObservation(p,fact(43));const b=await buildCivicBrief(p);assert.equal(b.status,'PARTIAL');assert.deepEqual(b.contradictions[0].values,[42,43]);assert.match(renderCivicHtml(b),/17 ou 112/);});
+test('refuses tampering with durable ledger',async()=>{const p=await file();await recordPublicObservation(p,fact());const l=JSON.parse(await readFile(p,'utf8'));l.missions[0].result.value=0;await writeFile(p,JSON.stringify(l));await assert.rejects(buildCivicBrief(p),/LEDGER_TAMPER_FAIL/);});
+test('empty report stays unverified',async()=>{const b=await buildCivicBrief(await file());assert.equal(b.status,'ATTRIBUTED_UNVERIFIED');});
