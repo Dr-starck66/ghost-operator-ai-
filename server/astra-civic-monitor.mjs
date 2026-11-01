@@ -7,7 +7,7 @@ import { readFile, writeFile, rename, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
 export const CIVIC_FEEDS = Object.freeze([
- {id:'gendinfo-organized-crime',name:'Gendarmerie / Gendinfo',url:'https://www.gendarmerie.interieur.gouv.fr/gendinfo/rss/9102',type:'rss',host:'www.gendarmerie.interieur.gouv.fr',prefix:'/gendinfo/'},
+ {id:'gendinfo-organized-crime',name:'Gendarmerie / Gendinfo',url:'https://www.gendarmerie.interieur.gouv.fr/gendinfo/rss/55328',type:'rss',host:'www.gendarmerie.interieur.gouv.fr',prefix:'/gendinfo/'},
  {id:'justice-press',name:'Ministère de la Justice / Espace presse',url:'https://www.justice.gouv.fr/espace-presse',type:'html',host:'www.justice.gouv.fr',prefix:'/'}
 ]);
 const hash=s=>createHash('sha256').update(typeof s==='string'?s:JSON.stringify(s)).digest('hex');
