@@ -1,0 +1,40 @@
+{
+  "schema": "astra-inkling-cloud-preflight-receipt-v1",
+  "runAtUtc": "2026-11-09T23:55:20.977Z",
+  "execution": {
+    "provider": "Vercel Sandbox",
+    "existingTestProject": "freehotels-info-test",
+    "sandboxName": "astra-inkling-access-readonly-20261110",
+    "sessionId": "sbx_zru5g4Nqciybt1VYA69LtmIsqE7D",
+    "region": "fra1",
+    "commandId": "cmd_22cff6de8f4f4a3a9bb33c756b39",
+    "commandExitCode": 0,
+    "commandDurationMs": 427,
+    "sourceGitBlobSha": "4d66986634481bc2782ae1e600176e76a23f5fa3",
+    "totalSessionDurationMs": 21304,
+    "activeCpuDurationMs": 1789,
+    "egressBytes": 7585,
+    "sessionStopped": true,
+    "persistent": false
+  },
+  "results": {
+    "huggingFace": {
+      "url": "https://huggingface.co/api/models/thinkingmachines/Inkling-2-Small",
+      "httpStatus": 401,
+      "status": "UNVERIFIED",
+      "reason": "HF_HTTP_401",
+      "responseSha256": "65842e3d84e6b7f62a470c85204e80b953bb8f944e9b69813130a9d7f3eaa1d8",
+      "qualification": "A 401 response does not prove whether the weights exist. Official Hugging Face connector separately returned Model not found."
+    },
+    "openCode": {
+      "url": "https://opencode.ai/docs/console/models",
+      "httpStatus": 200,
+      "status": "BLOCKED_EU",
+      "reason": "OFFICIAL_EU_EXCLUSION",
+      "responseSha256": "516ecb22ddb2ecb560b3917832e80a487b014e4b2927dceb5d2a0d7f619f3024"
+    },
+    "inferenceAllowed": false,
+    "providerInferenceCalls": 0,
+    "billing": "Not independently audited; no purchase, API billing activation or paid model called"
+  }
+}
