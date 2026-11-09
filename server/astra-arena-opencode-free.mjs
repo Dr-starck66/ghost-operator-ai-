@@ -35,11 +35,15 @@ export function makeOpenCodeInklingRunner({binary='opencode',execute=execFileAsy
         XDG_CONFIG_HOME:path.join(sandbox,'config'),XDG_CACHE_HOME:path.join(sandbox,'cache'),
         XDG_DATA_HOME:path.join(sandbox,'data'),XDG_STATE_HOME:path.join(sandbox,'state'),
         OPENCODE_DISABLE_FREE_MODELS:'0'};
-      const args=['run','--standalone','--model',INKLING_FREE_MODEL,prompt];
+      const args=['run','--model',INKLING_FREE_MODEL,prompt];
       const result=await execute(binary,args,{cwd:sandbox,env,timeout:timeoutMs,maxBuffer:65536,windowsHide:true,shell:false});
       if(typeof result?.stdout!=='string'||!result.stdout.trim())throw Error('EMPTY_OPEN_CODE_OUTPUT');
       return {answer:result.stdout.trim(),responseId:null,provider:'OpenCode free model; CLI identity not independently attested'};
-    } catch {
+    } catch (error) {
+      // Official provider restriction, observed live 2026-11-09 in fra1. NEVER retry or reroute.
+      const failure=String(error?.stderr||'')+'\n'+String(error?.stdout||'')+'\n'+String(error?.message||'');
+      if (/This model is not available in your country/i.test(failure))
+        throw Error('INKLING_GEO_RESTRICTED_NO_RETRY');
       throw Error('INKLING_FREE_CLI_UNAVAILABLE_OR_FAILED');
     } finally {
       await rm(sandbox,{recursive:true,force:true});
