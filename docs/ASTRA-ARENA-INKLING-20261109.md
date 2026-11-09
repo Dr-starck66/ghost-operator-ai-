@@ -7,6 +7,12 @@
 - Thinking Machines, annonce du 05/11/2026 : https://thinkingmachines.ai/news/inkling-2-small/ — Inkling 2 Small disponible via Tinker, poids encore fermés, publication Apache 2.0 annoncée sous réserve de vérifications de sécurité.
 - Thinking Machines, tarif consulté le 09/11/2026 : https://thinkingmachines.ai/tinker/pricing/ — inférence Tinker : 0,30 USD/M tokens entrée + 1,00 USD/M tokens sortie (256 K). **Pas d'appel payant autorisé.** Une interface Playground ne suffit pas à prouver une API gratuite automatisable.
 
+## Voie gratuite complémentaire (identifiée, non exécutée)
+
+- OpenCode référence désormais `opencode/inkling-2-small-free` à **0 $/token**, et documente `opencode run --model ...` sans compte pour ses modèles gratuits : https://models.opencode.ai/models/thinkingmachines/inkling-2-small/ et https://opencode.ai/docs/cli. Le catalogue ne prouve pas la disponibilité du runtime ASTRA.
+- Adaptateur optionnel : `server/astra-arena-opencode-free.mjs`, CLI installée **au préalable**, aucun téléchargement automatique, répertoire privé éphémère, variables sensibles non propagées et permissions des outils agents bloquées. Entrées de benchmark publiques exclusivement.
+- Contrôle actuel : `opencode` absent de l'environnement Node local ; DNS de `opencode.ai` inaccessible depuis ce conteneur. **Appel réel : UNVERIFIED**. Pas de substitution automatique par Tinker payant.
+
 ## Réutilisation des briques existantes
 
 - Dépôt : `Dr-starck66/ghost-operator-ai-`.
@@ -22,7 +28,7 @@
 Exécuter sans réseau ni configuration :
 
 ```sh
-node --test tests/astra-arena-inkling-benchmark.test.mjs
+node --test tests/astra-arena-inkling-benchmark.test.mjs tests/astra-arena-opencode-free.test.mjs
 node server/astra-arena-inkling-benchmark.mjs
 ```
 
