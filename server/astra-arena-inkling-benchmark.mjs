@@ -111,7 +111,9 @@ export function scoreTranscript(attempts, tasks=TASKS) {
  * Refuse ALL outbound calls unless TWO free prototype entitlements are confirmed.
  * A runner can be a test double; its output alone is NOT independent provider proof.
  */
-export async function runPairedArena({runners={},freeEntitlements={},tasks=TASKS,liveEnabled=false}={}) {
+export async function runPairedArena({runners={},freeEntitlements={},tasks=TASKS,liveEnabled=false,emitPublicTranscripts=false}={}) {
+  // Public evidence export is opt-in and restricted to the pinned synthetic task objects.
+  if (emitPublicTranscripts && !(Array.isArray(tasks) && tasks.length===TASKS.length && tasks.every((task,i)=>task===TASKS[i]))) throw Error('ONLY_REFERENCE_PUBLIC_TASKS_MAY_BE_EXPORTED');
   const names=['nemotron','inkling'];
   const ready=liveEnabled===true && names.every(n=>freeEntitlements[n]===true && typeof runners[n]==='function');
   if (!ready) return {schema:'astra-arena-v1',status:'UNVERIFIED',reason:'LIVE_TWO_MODEL_ZERO_COST_GATE_NOT_SATISFIED',liveCalls:0,
@@ -133,8 +135,13 @@ export async function runPairedArena({runners={},freeEntitlements={},tasks=TASKS
       }
     }
   }
-  return {schema:'astra-arena-v1',status:'PARTIAL',reason:'CALLER_TRANSPORT_RECEIPTS_REQUIRE_INDEPENDENT_PROVIDER_VERIFICATION',
+  const result={schema:'astra-arena-v1',status:'PARTIAL',reason:'CALLER_TRANSPORT_RECEIPTS_REQUIRE_INDEPENDENT_PROVIDER_VERIFICATION',
     liveCalls:tasks.length*names.length,models:names.map(name=>({name,model:MODELS[name],score:scoreTranscript(captures[name],tasks)}))};
+  if (emitPublicTranscripts) {
+    if (names.some(name=>captures[name].some(item=>typeof item.output!=='string'||item.output.length>20000))) throw Error('PUBLIC_TRANSCRIPT_TOO_LARGE');
+    result.publicSyntheticTranscripts=Object.fromEntries(names.map(name=>[name,captures[name].map(({taskId,promptSha256,output})=>({taskId,promptSha256,output}))]));
+  }
+  return result;
 }
 
 /** Existing Ghost NVIDIA adapter reused; no keys are stored or logged here. */
